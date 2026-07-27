@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: game
+    description: Kitaba game operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /game/new:
+    post:
+      operationId: newGame
+      tags: [game]
+      summary: Start a new game session
+      description: Creates a new game session with the initial world state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewGameRequest"
+      responses:
+        "200":
+          description: New game session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSessionResponse"
+
+  /game/action:
+    post:
+      operationId: submitAction
+      tags: [game]
+      summary: Submit a player action
+      description: Processes a player action and returns narrative + updated world state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
+      responses:
+        "200":
+          description: Action processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResponse"
+
+  /game/save:
+    post:
+      operationId: saveGame
+      tags: [game]
+      summary: Save the current game
+      description: Saves the current session state with an optional name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveGameRequest"
+      responses:
+        "200":
+          description: Game saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveGameResponse"
+
+  /game/load:
+    post:
+      operationId: loadGame
+      tags: [game]
+      summary: Load a saved game
+      description: Loads a previously saved game session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoadGameRequest"
+      responses:
+        "200":
+          description: Game loaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSessionResponse"
+
+  /game/saves:
+    get:
+      operationId: listSaves
+      tags: [game]
+      summary: List available saves
+      description: Returns a list of saved game slots
+      responses:
+        "200":
+          description: List of saves
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveListResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +131,159 @@ components:
       required:
         - status
 
+    NewGameRequest:
+      type: object
+      properties:
+        playerName:
+          type: string
+          description: The player character's name
+      required:
+        - playerName
+
+    ActionRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        playerInput:
+          type: string
+          description: Free-form text describing what the player does
+      required:
+        - sessionId
+        - playerInput
+
+    SaveGameRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        saveName:
+          type: string
+      required:
+        - sessionId
+        - saveName
+
+    LoadGameRequest:
+      type: object
+      properties:
+        saveId:
+          type: string
+      required:
+        - saveId
+
+    CharacterStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        locationName:
+          type: string
+        worldDate:
+          type: string
+        hunger:
+          type: number
+          description: 0 (starving) to 100 (full)
+        fatigue:
+          type: number
+          description: 0 (exhausted) to 100 (rested)
+        health:
+          type: number
+          description: 0 (dead) to 100 (perfect)
+      required:
+        - name
+        - locationName
+        - worldDate
+        - hunger
+        - fatigue
+        - health
+
+    NarrativeEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [player, narrator, system]
+        text:
+          type: string
+        timestamp:
+          type: string
+      required:
+        - id
+        - type
+        - text
+        - timestamp
+
+    GameSessionResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        characterStatus:
+          $ref: "#/components/schemas/CharacterStatus"
+        narrativeHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/NarrativeEntry"
+        introText:
+          type: string
+      required:
+        - sessionId
+        - characterStatus
+        - narrativeHistory
+
+    ActionResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        narrativeEntry:
+          $ref: "#/components/schemas/NarrativeEntry"
+        characterStatus:
+          $ref: "#/components/schemas/CharacterStatus"
+      required:
+        - sessionId
+        - narrativeEntry
+        - characterStatus
+
+    SaveGameResponse:
+      type: object
+      properties:
+        saveId:
+          type: string
+        saveName:
+          type: string
+        savedAt:
+          type: string
+      required:
+        - saveId
+        - saveName
+        - savedAt
+
+    SaveInfo:
+      type: object
+      properties:
+        saveId:
+          type: string
+        saveName:
+          type: string
+        characterName:
+          type: string
+        savedAt:
+          type: string
+      required:
+        - saveId
+        - saveName
+        - characterName
+        - savedAt
+
+    SaveListResponse:
+      type: object
+      properties:
+        saves:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaveInfo"
+      required:
+        - saves
