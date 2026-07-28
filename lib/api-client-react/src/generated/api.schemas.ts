@@ -5,6 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface ErrorResponse {
+  error: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -68,6 +72,8 @@ export interface ActionResponse {
   sessionId: string;
   narrativeEntry: NarrativeEntry;
   characterStatus: CharacterStatus;
+  /** @minimum 0 */
+  worldVersion: number;
 }
 
 export interface SaveGameResponse {
@@ -81,9 +87,26 @@ export interface SaveInfo {
   saveName: string;
   characterName: string;
   savedAt: string;
+  /** @minimum 0 */
+  worldVersion: number;
 }
 
 export interface SaveListResponse {
   saves: SaveInfo[];
 }
+
+/**
+ * Invalid request body
+ */
+export type BadRequestResponse = ErrorResponse;
+
+/**
+ * Requested game resource not found
+ */
+export type NotFoundResponse = ErrorResponse;
+
+/**
+ * Internal server error
+ */
+export type InternalServerErrorResponse = ErrorResponse;
 

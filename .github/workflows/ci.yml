@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -32,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate OpenAPI clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - name: Verify generated clients are committed
+        run: git diff --exit-code -- lib/api-client-react/src/generated lib/api-zod/src/generated
 
       - name: Check
         run: pnpm run check

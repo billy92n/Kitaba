@@ -53,6 +53,10 @@ export const SubmitActionBody = zod.object({
   "playerInput": zod.string().describe('Free-form text describing what the player does')
 })
 
+export const submitActionResponseWorldVersionMin = 0;
+
+
+
 export const SubmitActionResponse = zod.object({
   "sessionId": zod.string(),
   "narrativeEntry": zod.object({
@@ -68,7 +72,8 @@ export const SubmitActionResponse = zod.object({
   "hunger": zod.number().describe('0 (starving) to 100 (full)'),
   "fatigue": zod.number().describe('0 (exhausted) to 100 (rested)'),
   "health": zod.number().describe('0 (dead) to 100 (perfect)')
-})
+}),
+  "worldVersion": zod.number().min(submitActionResponseWorldVersionMin)
 })
 
 
@@ -120,11 +125,16 @@ export const LoadGameResponse = zod.object({
  * Returns a list of saved game slots
  * @summary List available saves
  */
+export const listSavesResponseSavesItemWorldVersionMin = 0;
+
+
+
 export const ListSavesResponse = zod.object({
   "saves": zod.array(zod.object({
   "saveId": zod.string(),
   "saveName": zod.string(),
   "characterName": zod.string(),
-  "savedAt": zod.string()
+  "savedAt": zod.string(),
+  "worldVersion": zod.number().min(listSavesResponseSavesItemWorldVersionMin)
 }))
 })

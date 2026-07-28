@@ -1,7 +1,11 @@
-// routes/game.ts — Endpoints HTTP du jeu Kitaba.
-// Les routes délèguent tout au gameService — aucune logique métier ici.
-
 import { Router, type Request, type Response } from "express";
+import {
+  LoadGameBody,
+  NewGameBody,
+  SaveGameBody,
+  SubmitActionBody,
+} from "@workspace/api-zod";
+import type { ZodType } from "zod";
 import {
   startNewGame,
   processPlayerAction,
@@ -12,71 +16,75 @@ import {
 
 const router = Router();
 
-// POST /api/game/new — Démarre une nouvelle partie
+function parseBody<T>(schema: ZodType<T>, req: Request, res: Response): T | undefined {
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Corps de requête invalide." });
+    return undefined;
+  }
+  return parsed.data;
+}
+
 router.post("/game/new", async (req: Request, res: Response) => {
-  const { playerName } = req.body as { playerName?: string };
-  if (!playerName || typeof playerName !== "string" || playerName.trim().length === 0) {
-    res.status(400).json({ error: "Le nom du personnage est requis." });
+  const body = parseBody(NewGameBody, req, res);
+  if (!body || body.playerName.trim().length === 0) {
+    if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
   try {
-    const result = await startNewGame(playerName);
-    res.json(result);
+    res.json(await startNewGame(body.playerName));
   } catch (err) {
     req.log.error({ err }, "Erreur game/new");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// POST /api/game/action — Traite une action du joueur
 router.post("/game/action", async (req: Request, res: Response) => {
-  const { sessionId, playerInput } = req.body as { sessionId?: string; playerInput?: string };
-  if (!sessionId || !playerInput) {
-    res.status(400).json({ error: "sessionId et playerInput sont requis." });
+  const body = parseBody(SubmitActionBody, req, res);
+  if (!body || body.sessionId.trim().length === 0 || body.playerInput.trim().length === 0) {
+    if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
   try {
-    const result = await processPlayerAction(sessionId, playerInput);
+    const result = await processPlayerAction(body.sessionId, body.playerInput);
     if (!result) {
       res.status(404).json({ error: "Session introuvable." });
       return;
     }
-    res.json({ sessionId, ...result });
+    res.json({ sessionId: body.sessionId, ...result });
   } catch (err) {
     req.log.error({ err }, "Erreur game/action");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// POST /api/game/save — Sauvegarde manuelle nommée
 router.post("/game/save", async (req: Request, res: Response) => {
-  const { sessionId, saveName } = req.body as { sessionId?: string; saveName?: string };
-  if (!sessionId || !saveName) {
-    res.status(400).json({ error: "sessionId et saveName sont requis." });
+  const body = parseBody(SaveGameBody, req, res);
+  if (!body || body.sessionId.trim().length === 0 || body.saveName.trim().length === 0) {
+    if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
   try {
-    const saveId = await saveGame(sessionId, saveName);
-    if (!saveId) {
+    const save = await saveGame(body.sessionId, body.saveName);
+    if (!save) {
       res.status(404).json({ error: "Session introuvable." });
       return;
     }
-    res.json({ saveId, message: "Partie sauvegardée." });
+    res.json(save);
   } catch (err) {
     req.log.error({ err }, "Erreur game/save");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// POST /api/game/load — Charge une sauvegarde (crée une nouvelle branche)
 router.post("/game/load", async (req: Request, res: Response) => {
-  const { saveId } = req.body as { saveId?: string };
-  if (!saveId) {
-    res.status(400).json({ error: "saveId est requis." });
+  const body = parseBody(LoadGameBody, req, res);
+  if (!body || body.saveId.trim().length === 0) {
+    if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
   try {
-    const result = await loadSavedGame(saveId);
+    const result = await loadSavedGame(body.saveId);
     if (!result) {
       res.status(404).json({ error: "Sauvegarde introuvable." });
       return;
@@ -88,11 +96,9 @@ router.post("/game/load", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/game/saves — Liste les sauvegardes manuelles
 router.get("/game/saves", async (req: Request, res: Response) => {
   try {
-    const saves = await getManualSaves();
-    res.json({ saves });
+    res.json({ saves: await getManualSaves() });
   } catch (err) {
     req.log.error({ err }, "Erreur game/saves");
     res.status(500).json({ error: "Erreur interne du serveur." });

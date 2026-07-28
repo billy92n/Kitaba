@@ -46,6 +46,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GameSessionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /game/action:
     post:
@@ -66,6 +70,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ActionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /game/save:
     post:
@@ -86,6 +96,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SaveGameResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /game/load:
     post:
@@ -106,6 +122,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GameSessionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /game/saves:
     get:
@@ -120,9 +142,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SaveListResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 components:
+  responses:
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Requested game resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
     HealthStatus:
       type: object
       properties:
@@ -242,10 +293,14 @@ components:
           $ref: "#/components/schemas/NarrativeEntry"
         characterStatus:
           $ref: "#/components/schemas/CharacterStatus"
+        worldVersion:
+          type: integer
+          minimum: 0
       required:
         - sessionId
         - narrativeEntry
         - characterStatus
+        - worldVersion
 
     SaveGameResponse:
       type: object
@@ -272,11 +327,15 @@ components:
           type: string
         savedAt:
           type: string
+        worldVersion:
+          type: integer
+          minimum: 0
       required:
         - saveId
         - saveName
         - characterName
         - savedAt
+        - worldVersion
 
     SaveListResponse:
       type: object

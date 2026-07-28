@@ -22,10 +22,13 @@ import type {
 import type {
   ActionRequest,
   ActionResponse,
+  BadRequestResponse,
   GameSessionResponse,
   HealthStatus,
+  InternalServerErrorResponse,
   LoadGameRequest,
   NewGameRequest,
+  NotFoundResponse,
   SaveGameRequest,
   SaveGameResponse,
   SaveListResponse
@@ -163,7 +166,7 @@ export const newGame = async (newGameRequest: NewGameRequest, options?: RequestI
 
 
 
-export const getNewGameMutationOptions = <TError = ErrorType<unknown>,
+export const getNewGameMutationOptions = <TError = ErrorType<BadRequestResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof newGame>>, TError,{data: BodyType<NewGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof newGame>>, TError,{data: BodyType<NewGameRequest>}, TContext> => {
 
@@ -192,12 +195,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type NewGameMutationResult = NonNullable<Awaited<ReturnType<typeof newGame>>>
     export type NewGameMutationBody = BodyType<NewGameRequest>
-    export type NewGameMutationError = ErrorType<unknown>
+    export type NewGameMutationError = ErrorType<BadRequestResponse | InternalServerErrorResponse>
 
     /**
  * @summary Start a new game session
  */
-export const useNewGame = <TError = ErrorType<unknown>,
+export const useNewGame = <TError = ErrorType<BadRequestResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof newGame>>, TError,{data: BodyType<NewGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof newGame>>,
@@ -235,7 +238,7 @@ export const submitAction = async (actionRequest: ActionRequest, options?: Reque
 
 
 
-export const getSubmitActionMutationOptions = <TError = ErrorType<unknown>,
+export const getSubmitActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext> => {
 
@@ -264,12 +267,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SubmitActionMutationResult = NonNullable<Awaited<ReturnType<typeof submitAction>>>
     export type SubmitActionMutationBody = BodyType<ActionRequest>
-    export type SubmitActionMutationError = ErrorType<unknown>
+    export type SubmitActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>
 
     /**
  * @summary Submit a player action
  */
-export const useSubmitAction = <TError = ErrorType<unknown>,
+export const useSubmitAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof submitAction>>,
@@ -307,7 +310,7 @@ export const saveGame = async (saveGameRequest: SaveGameRequest, options?: Reque
 
 
 
-export const getSaveGameMutationOptions = <TError = ErrorType<unknown>,
+export const getSaveGameMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveGame>>, TError,{data: BodyType<SaveGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof saveGame>>, TError,{data: BodyType<SaveGameRequest>}, TContext> => {
 
@@ -336,12 +339,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SaveGameMutationResult = NonNullable<Awaited<ReturnType<typeof saveGame>>>
     export type SaveGameMutationBody = BodyType<SaveGameRequest>
-    export type SaveGameMutationError = ErrorType<unknown>
+    export type SaveGameMutationError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>
 
     /**
  * @summary Save the current game
  */
-export const useSaveGame = <TError = ErrorType<unknown>,
+export const useSaveGame = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveGame>>, TError,{data: BodyType<SaveGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof saveGame>>,
@@ -379,7 +382,7 @@ export const loadGame = async (loadGameRequest: LoadGameRequest, options?: Reque
 
 
 
-export const getLoadGameMutationOptions = <TError = ErrorType<unknown>,
+export const getLoadGameMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loadGame>>, TError,{data: BodyType<LoadGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof loadGame>>, TError,{data: BodyType<LoadGameRequest>}, TContext> => {
 
@@ -408,12 +411,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type LoadGameMutationResult = NonNullable<Awaited<ReturnType<typeof loadGame>>>
     export type LoadGameMutationBody = BodyType<LoadGameRequest>
-    export type LoadGameMutationError = ErrorType<unknown>
+    export type LoadGameMutationError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>
 
     /**
  * @summary Load a saved game
  */
-export const useLoadGame = <TError = ErrorType<unknown>,
+export const useLoadGame = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loadGame>>, TError,{data: BodyType<LoadGameRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof loadGame>>,
@@ -458,7 +461,7 @@ export const getListSavesQueryKey = () => {
     }
 
 
-export const getListSavesQueryOptions = <TData = Awaited<ReturnType<typeof listSaves>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSaves>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListSavesQueryOptions = <TData = Awaited<ReturnType<typeof listSaves>>, TError = ErrorType<InternalServerErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSaves>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -477,14 +480,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListSavesQueryResult = NonNullable<Awaited<ReturnType<typeof listSaves>>>
-export type ListSavesQueryError = ErrorType<unknown>
+export type ListSavesQueryError = ErrorType<InternalServerErrorResponse>
 
 
 /**
  * @summary List available saves
  */
 
-export function useListSaves<TData = Awaited<ReturnType<typeof listSaves>>, TError = ErrorType<unknown>>(
+export function useListSaves<TData = Awaited<ReturnType<typeof listSaves>>, TError = ErrorType<InternalServerErrorResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSaves>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
