@@ -1,90 +1,109 @@
-// engine/actionResolver.ts — Orchestre validation, conséquences et avance du temps.
-// Reçoit une StructuredAction déjà parsée. N'interprète JAMAIS le langage naturel.
-// Retourne : le nouvel état du monde, un événement factuel, et les faits observables.
-// Ne produit aucune narration.
+// Orchestre validation, conséquences et temps sans interpréter le langage naturel.
 
 import { randomUUID } from "crypto";
-import type { EntityId, WorldState } from "../domain/world.js";
 import type { StructuredAction } from "../domain/actions.js";
 import type { GameEvent } from "../domain/events.js";
 import type { ActionOutcome } from "../domain/knowledge.js";
-import { validateAction } from "./actionValidator.js";
+import type { EntityId, WorldState } from "../domain/world.js";
+import { validateAction, type ActionFailureCode } from "./actionValidator.js";
 import { applyConsequences } from "./consequenceEngine.js";
 import { applyTimeAndDecay } from "./timeEngine.js";
 
-export interface ResolvedAction {
-  success: boolean;
+export const UNRESOLVED_LOCATION_ID = "unresolved";
+
+export interface ResolutionDependencies {
+  createEventId(): string;
+}
+
+const defaultDependencies: ResolutionDependencies = {
+  createEventId: randomUUID,
+};
+
+interface ResolutionBase {
   newWorldState: WorldState;
   event: GameEvent;
   actionOutcome: ActionOutcome;
 }
 
+export interface ResolvedActionSuccess extends ResolutionBase {
+  success: true;
+}
+
+export interface ResolvedActionFailure extends ResolutionBase {
+  success: false;
+  failureCode: ActionFailureCode;
+}
+
+export type ResolvedAction = ResolvedActionSuccess | ResolvedActionFailure;
+
 export function resolveAction(
   state: WorldState,
   actorId: EntityId,
   action: StructuredAction,
+  dependencies: ResolutionDependencies = defaultDependencies,
 ): ResolvedAction {
-  const controlled = state.entities[actorId];
   const validation = validateAction(state, actorId, action);
 
   if (!validation.possible) {
-    // Action impossible — aucun changement d'état
     const event: GameEvent = {
-      id: randomUUID(),
-      sessionId: "",            // rempli par gameService après création
+      id: dependencies.createEventId(),
+      sessionId: "",
       worldVersion: state.worldVersion,
       actionType: action.actionType,
       actorId,
-      locationId: controlled?.locationId ?? "",
+      locationId: validation.actor?.locationId ?? UNRESOLVED_LOCATION_ID,
       targetId: null,
-      description: `[BLOQUÉ] ${validation.reason ?? "Action impossible"}`,
+      description: `[BLOQUÉ] [${validation.code}] ${validation.reason}`,
       consequences: [],
       occurredAt: state.time,
     };
-
-    const outcome: ActionOutcome = {
-      actionType: action.actionType,
+    return {
       success: false,
-      targetName: action.targetName,
-      observableFacts: [validation.reason ?? "Action impossible."],
+      failureCode: validation.code,
+      newWorldState: state,
+      event,
+      actionOutcome: {
+        actionType: action.actionType,
+        success: false,
+        targetName: action.targetName,
+        observableFacts: [validation.reason],
+      },
     };
-
-    return { success: false, newWorldState: state, event, actionOutcome: outcome };
   }
-  if (!controlled) throw new Error(`Validated actor not found: ${actorId}`);
 
-  // Calcule et applique les conséquences
-  const { newWorldState: stateAfterConsequences, observableFacts, consequences, targetId } =
-    applyConsequences(state, actorId, action);
-
-  // Avance le temps et applique le déclin passif
-  const stateAfterTime = applyTimeAndDecay(stateAfterConsequences, actorId, action.actionType);
-
-  // Incrémente worldVersion
+  const consequence = applyConsequences(state, validation.context);
+  const stateAfterTime = applyTimeAndDecay(
+    consequence.newWorldState,
+    consequence.actorAfter,
+    action.actionType,
+  );
   const newWorldState: WorldState = {
     ...stateAfterTime,
     worldVersion: state.worldVersion + 1,
   };
 
-  const event: GameEvent = {
-    id: randomUUID(),
-    sessionId: "",              // rempli par gameService
-    worldVersion: newWorldState.worldVersion,
-    actionType: action.actionType,
-    actorId: controlled.id,
-    locationId: controlled.locationId,
-    targetId,
-    description: `${controlled.name} : ${action.actionType} → ${action.targetName ?? "—"}`,
-    consequences,
-    occurredAt: state.time,    // moment où l'action a eu lieu (avant l'avance du temps)
-  };
-
-  const outcome: ActionOutcome = {
-    actionType: action.actionType,
+  return {
     success: true,
-    targetName: action.targetName,
-    observableFacts,
+    newWorldState,
+    event: {
+      id: dependencies.createEventId(),
+      sessionId: "",
+      worldVersion: newWorldState.worldVersion,
+      actionType: action.actionType,
+      actorId: validation.context.actor.id,
+      // Convention : lieu de départ, afin de préserver le contexte de l'action.
+      locationId: validation.context.location.id,
+      targetId: consequence.targetId,
+      description: `${validation.context.actor.name} : ${action.actionType} → ${action.targetName ?? "—"}`,
+      consequences: consequence.consequences,
+      // Convention : instant du monde avant l'application du coût temporel.
+      occurredAt: state.time,
+    },
+    actionOutcome: {
+      actionType: action.actionType,
+      success: true,
+      targetName: action.targetName,
+      observableFacts: consequence.observableFacts,
+    },
   };
-
-  return { success: true, newWorldState, event, actionOutcome: outcome };
 }
