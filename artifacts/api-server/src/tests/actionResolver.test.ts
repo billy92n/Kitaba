@@ -21,18 +21,24 @@ describe("actionResolver", () => {
   it("une action impossible ne modifie pas le worldState", () => {
     const state = createInitialWorldState("Yara");
     const before = state.worldVersion;
-    const action = makeAction({ actionType: "move", targetName: "lieu_inexistant" });
+    const action = makeAction({
+      actionType: "move",
+      targetName: "lieu_inexistant",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.success).toBe(false);
     expect(result.newWorldState.worldVersion).toBe(before); // inchangé
-    expect(result.newWorldState).toStrictEqual(state);      // aucun changement d'état
+    expect(result.newWorldState).toStrictEqual(state); // aucun changement d'état
   });
 
   it("une action réussie incrémente worldVersion", () => {
     const state = createInitialWorldState("Yara");
-    const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
+    const action = makeAction({
+      actionType: "move",
+      targetName: "taverne du loup",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
@@ -42,7 +48,10 @@ describe("actionResolver", () => {
 
   it("une action réussie crée un événement factuel non-vide", () => {
     const state = createInitialWorldState("Yara");
-    const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
+    const action = makeAction({
+      actionType: "move",
+      targetName: "taverne du loup",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
@@ -55,7 +64,10 @@ describe("actionResolver", () => {
 
   it("une action impossible crée un événement marqué [BLOQUÉ]", () => {
     const state = createInitialWorldState("Yara");
-    const action = makeAction({ actionType: "attack", targetName: "quelqu'un" });
+    const action = makeAction({
+      actionType: "attack",
+      targetName: "quelqu'un",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
@@ -65,17 +77,24 @@ describe("actionResolver", () => {
 
   it("se déplacer met à jour la locationId de l'entité contrôlée", () => {
     const state = createInitialWorldState("Yara");
-    const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
+    const action = makeAction({
+      actionType: "move",
+      targetName: "taverne du loup",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
-    const entity = result.newWorldState.entities[result.newWorldState.controlledEntityId];
+    const entity =
+      result.newWorldState.entities[result.newWorldState.controlledEntityId];
     expect(entity.locationId).toBe("taverne_du_loup");
   });
 
   it("examiner ne modifie pas le worldState mais retourne une description", () => {
     const state = createInitialWorldState("Yara");
-    const action = makeAction({ actionType: "examine", targetName: "fontaine" });
+    const action = makeAction({
+      actionType: "examine",
+      targetName: "fontaine",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
