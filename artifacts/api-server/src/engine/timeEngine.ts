@@ -1,7 +1,7 @@
 // engine/timeEngine.ts — Avance le temps et applique les effets passifs sur l'entité contrôlée.
 // Ne produit jamais de narration.
 
-import type { WorldState, WorldTime } from "../domain/world.js";
+import type { EntityId, WorldState, WorldTime } from "../domain/world.js";
 import type { Entity } from "../domain/entities.js";
 
 // Coût en temps et en stats par type d'action (en heures)
@@ -65,21 +65,25 @@ export function getTimeCost(actionType: string): number {
 }
 
 // Applique le temps et le déclin sur le WorldState après une action
-export function applyTimeAndDecay(state: WorldState, actionType: string): WorldState {
+export function applyTimeAndDecay(
+  state: WorldState,
+  actorId: EntityId,
+  actionType: string,
+): WorldState {
   const hours = getTimeCost(actionType);
   if (hours === 0) return state;
 
   const newTime = advanceTime(state.time, hours);
-  const controlled = state.entities[state.controlledEntityId];
-  if (!controlled) return { ...state, time: newTime };
+  const actor = state.entities[actorId];
+  if (!actor) return { ...state, time: newTime };
 
-  const updatedEntity = applyPassiveDecay(controlled, hours);
+  const updatedEntity = applyPassiveDecay(actor, hours);
   return {
     ...state,
     time: newTime,
     entities: {
       ...state.entities,
-      [state.controlledEntityId]: updatedEntity,
+      [actorId]: updatedEntity,
     },
   };
 }
