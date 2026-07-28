@@ -1,168 +1,203 @@
-// engine/consequenceEngine.ts — Calcule et applique les conséquences d'une action validée.
-// Retourne le nouvel état du monde et la liste des changements (faits, jamais de narration).
-// N'interprète jamais le langage naturel — reçoit une action déjà structurée et validée.
+// Applique uniquement le contexte résolu par la validation : aucune cible n'est recherchée ici.
 
-import type { EntityId, WorldState } from "../domain/world.js";
-import type { StructuredAction } from "../domain/actions.js";
-import {
-  findAnything,
-  findEntityAtLocation,
-  findLocationByQuery,
-  findObjectAvailable,
-} from "./targetResolution.js";
+import type { WorldState } from "../domain/world.js";
+import type { Entity } from "../domain/entities.js";
+import type { ValidatedActionContext } from "./actionValidator.js";
 
 export interface ConsequenceResult {
   newWorldState: WorldState;
-  observableFacts: string[];   // faits perceptibles par l'acteur
-  consequences: string[];      // description technique des changements d'état
+  observableFacts: string[];
+  consequences: string[];
   targetId: string | null;
+  actorAfter: Entity;
 }
 
 export function applyConsequences(
   state: WorldState,
-  actorId: EntityId,
-  action: StructuredAction,
+  context: ValidatedActionContext,
 ): ConsequenceResult {
-  const controlled = state.entities[actorId]!;
-  let newState = { ...state, entities: { ...state.entities }, locations: { ...state.locations }, objects: { ...state.objects } };
+  const { actor } = context;
 
-  switch (action.actionType) {
-    case "move": {
-      const target = findLocationByQuery(state, action.targetName)!;
-      const prevLocId = controlled.locationId;
-      const prevLoc = newState.locations[prevLocId];
-      const nextLoc = newState.locations[target.id];
-
-      // Met à jour la présence dans les lieux
-      newState.locations[prevLocId] = {
-        ...prevLoc,
-        presentEntities: prevLoc.presentEntities.filter((id) => id !== controlled.id),
-      };
-      newState.locations[target.id] = {
-        ...nextLoc,
-        presentEntities: [...nextLoc.presentEntities.filter((id) => id !== controlled.id), controlled.id],
-      };
-      newState.entities[controlled.id] = { ...controlled, locationId: target.id };
-
+  switch (context.kind) {
+    case "MOVE": {
+      const source = context.location;
+      const target = context.target;
       return {
-        newWorldState: newState,
+        newWorldState: {
+          ...state,
+          entities: {
+            ...state.entities,
+            [actor.id]: { ...actor, locationId: target.id },
+          },
+          locations: {
+            ...state.locations,
+            [source.id]: {
+              ...source,
+              presentEntities: source.presentEntities.filter(
+                (id) => id !== actor.id,
+              ),
+            },
+            [target.id]: {
+              ...target,
+              presentEntities: [
+                ...target.presentEntities.filter((id) => id !== actor.id),
+                actor.id,
+              ],
+            },
+          },
+        },
         observableFacts: [`Vous entrez dans ${target.name}.`],
-        consequences: [`entity:${controlled.id}:locationId:${prevLocId}→${target.id}`],
+        consequences: [
+          `entity:${actor.id}:locationId:${source.id}→${target.id}`,
+        ],
         targetId: target.id,
+        actorAfter: { ...actor, locationId: target.id },
       };
     }
-
-    case "speak": {
-      const entity = findEntityAtLocation(state, actorId, controlled.locationId, action.targetName)!;
+    case "SPEAK":
       return {
-        newWorldState: newState,
-        observableFacts: [`${entity.name} vous répond brièvement.`],
+        newWorldState: state,
+        observableFacts: [`${context.target.name} vous répond brièvement.`],
         consequences: [],
-        targetId: entity.id,
+        targetId: context.target.id,
+        actorAfter: actor,
+      };
+    case "TAKE": {
+      const object = context.target;
+      const previousOwner = object.ownerId
+        ? state.entities[object.ownerId]
+        : undefined;
+      const previousLocation = object.locationId
+        ? state.locations[object.locationId]
+        : undefined;
+      const entities = {
+        ...state.entities,
+        ...(previousOwner
+          ? {
+              [previousOwner.id]: {
+                ...previousOwner,
+                inventory: previousOwner.inventory.filter(
+                  (id) => id !== object.id,
+                ),
+              },
+            }
+          : {}),
+        [actor.id]: {
+          ...actor,
+          inventory: [
+            ...actor.inventory.filter((id) => id !== object.id),
+            object.id,
+          ],
+        },
+      };
+      return {
+        newWorldState: {
+          ...state,
+          entities,
+          objects: {
+            ...state.objects,
+            [object.id]: { ...object, locationId: null, ownerId: actor.id },
+          },
+          ...(previousLocation
+            ? {
+                locations: {
+                  ...state.locations,
+                  [previousLocation.id]: {
+                    ...previousLocation,
+                    presentObjects: previousLocation.presentObjects.filter(
+                      (id) => id !== object.id,
+                    ),
+                  },
+                },
+              }
+            : {}),
+        },
+        observableFacts: [`${object.name} est maintenant dans vos affaires.`],
+        consequences: [
+          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}→${actor.id}`,
+        ],
+        targetId: object.id,
+        actorAfter: entities[actor.id],
       };
     }
-
-    case "take": {
-      const obj = findObjectAvailable(state, actorId, action.targetName)!;
-      const prevOwnerId = obj.ownerId;
-      const prevLocationId = obj.locationId;
-
-      // Retire l'objet de son propriétaire précédent ou du sol
-      if (prevOwnerId && newState.entities[prevOwnerId]) {
-        newState.entities[prevOwnerId] = {
-          ...newState.entities[prevOwnerId],
-          inventory: newState.entities[prevOwnerId].inventory.filter((id) => id !== obj.id),
-        };
-      }
-      if (prevLocationId && newState.locations[prevLocationId]) {
-        newState.locations[prevLocationId] = {
-          ...newState.locations[prevLocationId],
-          presentObjects: newState.locations[prevLocationId].presentObjects.filter((id) => id !== obj.id),
-        };
-      }
-
-      // Ajoute à l'inventaire du personnage contrôlé
-      newState.objects[obj.id] = { ...obj, locationId: null, ownerId: controlled.id };
-      newState.entities[controlled.id] = {
-        ...newState.entities[controlled.id],
-        inventory: [...newState.entities[controlled.id].inventory, obj.id],
-      };
-
+    case "EXAMINE":
       return {
-        newWorldState: newState,
-        observableFacts: [`${obj.name} est maintenant dans vos affaires.`],
-        consequences: [`object:${obj.id}:owner:${prevOwnerId ?? prevLocationId ?? "sol"}→${controlled.id}`],
-        targetId: obj.id,
-      };
-    }
-
-    case "examine": {
-      const found = findAnything(state, actorId, action.targetName);
-      if (!found) {
-        return {
-          newWorldState: newState,
-          observableFacts: [`Vous ne voyez rien de particulier concernant "${action.targetName ?? "cela"}".`],
-          consequences: [],
-          targetId: null,
-        };
-      }
-      return {
-        newWorldState: newState,
-        observableFacts: [found.description],
+        newWorldState: state,
+        observableFacts: [
+          context.target?.description ??
+            `Vous ne voyez rien de particulier concernant "${context.action.targetName ?? "cela"}".`,
+        ],
         consequences: [],
-        targetId: null,
+        targetId: context.target?.id ?? null,
+        actorAfter: actor,
       };
-    }
-
-    case "eat": {
-      const obj = findObjectAvailable(state, actorId, action.targetName)!;
-      newState.entities[controlled.id] = {
-        ...newState.entities[controlled.id],
-        inventory: newState.entities[controlled.id].inventory.filter((id) => id !== obj.id),
-        hunger: Math.min(100, (controlled.hunger ?? 50) + 30),
-      };
-      newState.objects[obj.id] = { ...obj, locationId: null, ownerId: null };
-
+    case "EAT": {
+      const object = context.target;
       return {
-        newWorldState: newState,
-        observableFacts: [`Vous mangez ${obj.name}. Votre faim diminue.`],
-        consequences: [`object:${obj.id}:consumed`, `entity:${controlled.id}:hunger:+30`],
-        targetId: obj.id,
+        newWorldState: {
+          ...state,
+          entities: {
+            ...state.entities,
+            [actor.id]: {
+              ...actor,
+              inventory: actor.inventory.filter((id) => id !== object.id),
+              hunger: Math.min(100, (actor.hunger ?? 50) + 30),
+            },
+          },
+          objects: {
+            ...state.objects,
+            [object.id]: { ...object, locationId: null, ownerId: null },
+          },
+        },
+        observableFacts: [`Vous mangez ${object.name}. Votre faim diminue.`],
+        consequences: [
+          `object:${object.id}:consumed`,
+          `entity:${actor.id}:hunger:+30`,
+        ],
+        targetId: object.id,
+        actorAfter: {
+          ...actor,
+          inventory: actor.inventory.filter((id) => id !== object.id),
+          hunger: Math.min(100, (actor.hunger ?? 50) + 30),
+        },
       };
     }
-
-    case "sleep": {
-      const fatigueBefore = controlled.fatigue ?? 50;
+    case "SLEEP": {
+      const fatigueBefore = actor.fatigue ?? 50;
       const fatigueAfter = Math.min(100, fatigueBefore + 60);
-      newState.entities[controlled.id] = {
-        ...newState.entities[controlled.id],
-        fatigue: fatigueAfter,
-      };
-
       return {
-        newWorldState: newState,
-        observableFacts: [`Vous dormez plusieurs heures. Votre fatigue se dissipe.`],
-        consequences: [`entity:${controlled.id}:fatigue:${fatigueBefore}→${fatigueAfter}`],
+        newWorldState: {
+          ...state,
+          entities: {
+            ...state.entities,
+            [actor.id]: { ...actor, fatigue: fatigueAfter },
+          },
+        },
+        observableFacts: [
+          "Vous dormez plusieurs heures. Votre fatigue se dissipe.",
+        ],
+        consequences: [
+          `entity:${actor.id}:fatigue:${fatigueBefore}→${fatigueAfter}`,
+        ],
         targetId: null,
+        actorAfter: { ...actor, fatigue: fatigueAfter },
       };
     }
-
-    case "give": {
+    case "GIVE":
       return {
-        newWorldState: newState,
-        observableFacts: [`L'échange a lieu.`],
+        newWorldState: state,
+        observableFacts: ["L'échange a lieu."],
         consequences: [],
         targetId: null,
+        actorAfter: actor,
       };
-    }
-
-    default: {
+    case "USE":
       return {
-        newWorldState: newState,
+        newWorldState: state,
         observableFacts: [],
         consequences: [],
         targetId: null,
+        actorAfter: actor,
       };
-    }
   }
 }
