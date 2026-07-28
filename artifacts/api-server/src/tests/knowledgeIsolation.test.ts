@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
 import type { ActionOutcome } from "../domain/knowledge.js";
+import type { PerceptionResult } from "../engine/perceptionEngine.js";
 
 const dummyOutcome: ActionOutcome = {
   actionType: "examine",
@@ -14,10 +15,18 @@ const dummyOutcome: ActionOutcome = {
   observableFacts: [],
 };
 
+function factsFrom(result: PerceptionResult) {
+  expect(result.success).toBe(true);
+  if (!result.success) throw new Error(result.reason);
+  return result.facts;
+}
+
 describe("knowledgeIsolation", () => {
   it("les PerceptibleFacts ne contiennent pas les notes secrètes des relations", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
+    );
 
     // Les notes de relations sont secrètes — elles ne doivent pas apparaître dans les faits
     const factsJson = JSON.stringify(facts);
@@ -28,7 +37,9 @@ describe("knowledgeIsolation", () => {
 
   it("les PerceptibleFacts ne contiennent pas les inventaires des PNJ", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
+    );
 
     // L'inventaire de Tariq (pain_taverne) est privé et ne doit pas fuiter
     const factsJson = JSON.stringify(facts);
@@ -40,7 +51,9 @@ describe("knowledgeIsolation", () => {
 
   it("les PerceptibleFacts n'exposent que le lieu courant, pas le monde entier", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
+    );
 
     // Le joueur est place_centrale — la forge et la ferme ne doivent pas être visibles
     const factsJson = JSON.stringify(facts);
@@ -56,7 +69,15 @@ describe("knowledgeIsolation", () => {
     const npc = state.entities["hamid"];
 
     // Les deux doivent partager les mêmes clés de base
-    const sharedKeys: Array<keyof typeof controlled> = ["id", "name", "occupation", "locationId", "description", "mood", "inventory"];
+    const sharedKeys: Array<keyof typeof controlled> = [
+      "id",
+      "name",
+      "occupation",
+      "locationId",
+      "description",
+      "mood",
+      "inventory",
+    ];
     for (const key of sharedKeys) {
       expect(controlled).toHaveProperty(key);
       expect(npc).toHaveProperty(key);
@@ -71,7 +92,9 @@ describe("knowledgeIsolation", () => {
   it("seules les entités du lieu courant sont visibles", () => {
     const state = createInitialWorldState("Yara");
     // Yara est place_centrale — Hamid est forge_hamid
-    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
+    );
 
     const entityNames = facts.presentEntities.map((e) => e.name);
     expect(entityNames).not.toContain("Hamid");
