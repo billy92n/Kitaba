@@ -78,11 +78,12 @@ export async function processPlayerAction(
   const action = interpretPlayerAction(playerInput.trim());
 
   // 2. Résolution moteur — ne touche pas au langage naturel
-  const resolved = resolveAction(worldState, action);
+  const actorId = worldState.controlledEntityId;
+  const resolved = resolveAction(worldState, actorId, action);
   resolved.event.sessionId = sessionId;
 
   // 3. Construction des faits perceptibles — filtre l'état du monde
-  const facts = buildPerceptibleFacts(resolved.newWorldState, resolved.actionOutcome);
+  const facts = buildPerceptibleFacts(resolved.newWorldState, actorId, resolved.actionOutcome);
 
   // 4. Narration — ne reçoit que les faits perceptibles
   const narrationText = narrateFromPerception(facts);
