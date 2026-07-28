@@ -152,11 +152,16 @@ export async function processPlayerAction(
 
 // ─── Sauvegarde manuelle ──────────────────────────────────────────────────────
 
-export async function saveGame(sessionId: string, saveName: string): Promise<string | null> {
+export async function saveGame(sessionId: string, saveName: string): Promise<{
+  saveId: string;
+  saveName: string;
+  savedAt: string;
+} | null> {
   const session = await loadSession(sessionId);
   if (!session) return null;
 
   const saveId = randomUUID();
+  const savedAt = new Date();
   await db.insert(kitabaSavesTable).values({
     id: saveId,
     sessionId,
@@ -167,8 +172,13 @@ export async function saveGame(sessionId: string, saveName: string): Promise<str
     worldVersion: session.worldState.worldVersion,
     worldState: session.worldState as unknown as Record<string, unknown>,
     narrativeHistory: session.narrativeHistory as unknown as Record<string, unknown>[],
+    savedAt,
   });
-  return saveId;
+  return {
+    saveId,
+    saveName,
+    savedAt: savedAt.toISOString(),
+  };
 }
 
 // ─── Chargement d'une sauvegarde — crée une nouvelle branche ─────────────────
