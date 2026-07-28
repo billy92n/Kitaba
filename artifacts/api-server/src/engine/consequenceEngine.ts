@@ -2,9 +2,14 @@
 // Retourne le nouvel état du monde et la liste des changements (faits, jamais de narration).
 // N'interprète jamais le langage naturel — reçoit une action déjà structurée et validée.
 
-import type { WorldState } from "../domain/world.js";
+import type { EntityId, WorldState } from "../domain/world.js";
 import type { StructuredAction } from "../domain/actions.js";
-import { getControlledEntity } from "../domain/world.js";
+import {
+  findAnything,
+  findEntityAtLocation,
+  findLocationByQuery,
+  findObjectAvailable,
+} from "./targetResolution.js";
 
 export interface ConsequenceResult {
   newWorldState: WorldState;
@@ -13,80 +18,12 @@ export interface ConsequenceResult {
   targetId: string | null;
 }
 
-function normalize(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, "").trim();
-}
-
-function findLocationByQuery(state: WorldState, query: string | null) {
-  if (!query) return null;
-  const stripped = query.replace(/^(la|le|les|l'|l'|du|au|aux|un|une)\s+/i, "").trim();
-  const q = normalize(stripped || query);
-  for (const loc of Object.values(state.locations)) {
-    const n = normalize(loc.name);
-    if (n.includes(q) || q.includes(normalize(loc.id)) || n.split(" ").some((w) => w.length > 3 && q.includes(w))) {
-      return loc;
-    }
-  }
-  return null;
-}
-
-function findEntityAtLocation(state: WorldState, locationId: string, query: string | null) {
-  if (!query) return null;
-  const q = normalize(query);
-  return Object.values(state.entities).find(
-    (e) => e.locationId === locationId && e.id !== state.controlledEntityId && normalize(e.name).includes(q)
-  ) ?? null;
-}
-
-function findObjectAvailable(state: WorldState, query: string | null) {
-  if (!query) return null;
-  const q = normalize(query);
-  const controlled = getControlledEntity(state);
-  for (const objId of controlled.inventory) {
-    const obj = state.objects[objId];
-    if (obj && normalize(obj.name).includes(q)) return obj;
-  }
-  const locationId = controlled.locationId;
-  const all = Object.values(state.objects).filter(
-    (o) =>
-      o.locationId === locationId ||
-      (o.ownerId !== null && state.entities[o.ownerId]?.locationId === locationId)
-  );
-  return all.find((o) => normalize(o.name).includes(q)) ?? null;
-}
-
-function findAnything(state: WorldState, query: string | null): { name: string; description: string } | null {
-  if (!query) return null;
-  const q = normalize(query);
-  const controlled = getControlledEntity(state);
-  const locationId = controlled.locationId;
-
-  for (const obj of Object.values(state.objects)) {
-    if (obj.locationId === locationId || controlled.inventory.includes(obj.id)) {
-      if (normalize(obj.name).includes(q)) return { name: obj.name, description: obj.description };
-    }
-  }
-  for (const entity of Object.values(state.entities)) {
-    if (entity.locationId === locationId && normalize(entity.name).includes(q)) {
-      return { name: entity.name, description: entity.description };
-    }
-  }
-  const loc = state.locations[locationId];
-  if (loc) {
-    if (normalize(loc.name).includes(q)) return { name: loc.name, description: loc.description };
-    for (const connId of loc.connectedLocations) {
-      const conn = state.locations[connId];
-      if (conn && normalize(conn.name).includes(q)) return { name: conn.name, description: conn.description };
-    }
-    if (q.length < 3 || normalize(loc.name).includes(q) || q.includes("lieu") || q.includes("endroit")) {
-      return { name: loc.name, description: loc.description };
-    }
-  }
-  return null;
-}
-
-export function applyConsequences(state: WorldState, action: StructuredAction): ConsequenceResult {
-  const controlled = getControlledEntity(state);
+export function applyConsequences(
+  state: WorldState,
+  actorId: EntityId,
+  action: StructuredAction,
+): ConsequenceResult {
+  const controlled = state.entities[actorId]!;
   let newState = { ...state, entities: { ...state.entities }, locations: { ...state.locations }, objects: { ...state.objects } };
 
   switch (action.actionType) {
@@ -116,7 +53,7 @@ export function applyConsequences(state: WorldState, action: StructuredAction): 
     }
 
     case "speak": {
-      const entity = findEntityAtLocation(state, controlled.locationId, action.targetName)!;
+      const entity = findEntityAtLocation(state, actorId, controlled.locationId, action.targetName)!;
       return {
         newWorldState: newState,
         observableFacts: [`${entity.name} vous répond brièvement.`],
@@ -126,7 +63,7 @@ export function applyConsequences(state: WorldState, action: StructuredAction): 
     }
 
     case "take": {
-      const obj = findObjectAvailable(state, action.targetName)!;
+      const obj = findObjectAvailable(state, actorId, action.targetName)!;
       const prevOwnerId = obj.ownerId;
       const prevLocationId = obj.locationId;
 
@@ -160,7 +97,7 @@ export function applyConsequences(state: WorldState, action: StructuredAction): 
     }
 
     case "examine": {
-      const found = findAnything(state, action.targetName);
+      const found = findAnything(state, actorId, action.targetName);
       if (!found) {
         return {
           newWorldState: newState,
@@ -178,7 +115,7 @@ export function applyConsequences(state: WorldState, action: StructuredAction): 
     }
 
     case "eat": {
-      const obj = findObjectAvailable(state, action.targetName)!;
+      const obj = findObjectAvailable(state, actorId, action.targetName)!;
       newState.entities[controlled.id] = {
         ...newState.entities[controlled.id],
         inventory: newState.entities[controlled.id].inventory.filter((id) => id !== obj.id),
