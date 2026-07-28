@@ -4,30 +4,47 @@ import { resolveAction } from "../engine/actionResolver.js";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
 
-function action(actionType: StructuredAction["actionType"], targetName: string | null): StructuredAction {
+function action(
+  actionType: StructuredAction["actionType"],
+  targetName: string | null,
+): StructuredAction {
   return { actionType, targetName, details: "", rawInput: "" };
 }
 
 describe("moteur multi-acteur", () => {
   it("préserve les actions du personnage contrôlé", () => {
     const state = createInitialWorldState("Yara");
-    expect(resolveAction(state, "player", action("move", "taverne du loup")).success).toBe(true);
+    expect(
+      resolveAction(state, "player", action("move", "taverne du loup")).success,
+    ).toBe(true);
   });
 
   it("permet à un PNJ de se déplacer", () => {
     const state = createInitialWorldState("Yara");
-    const result = resolveAction(state, "hamid", action("move", "place centrale"));
+    const result = resolveAction(
+      state,
+      "hamid",
+      action("move", "place centrale"),
+    );
     expect(result.success).toBe(true);
-    expect(result.newWorldState.entities.hamid.locationId).toBe("place_centrale");
-    expect(result.newWorldState.entities.player.locationId).toBe("place_centrale");
+    expect(result.newWorldState.entities.hamid.locationId).toBe(
+      "place_centrale",
+    );
+    expect(result.newWorldState.entities.player.locationId).toBe(
+      "place_centrale",
+    );
   });
 
   it("permet à un PNJ de prendre un objet", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(state, "hamid", action("take", "minerai"));
     expect(result.success).toBe(true);
-    expect(result.newWorldState.entities.hamid.inventory).toContain("minerai_fer");
-    expect(result.newWorldState.entities.player.inventory).not.toContain("minerai_fer");
+    expect(result.newWorldState.entities.hamid.inventory).toContain(
+      "minerai_fer",
+    );
+    expect(result.newWorldState.entities.player.inventory).not.toContain(
+      "minerai_fer",
+    );
   });
 
   it("permet à un PNJ de manger un objet de son inventaire", () => {
@@ -35,7 +52,9 @@ describe("moteur multi-acteur", () => {
     state.entities.tariq.hunger = 40;
     const result = resolveAction(state, "tariq", action("eat", "pain"));
     expect(result.success).toBe(true);
-    expect(result.newWorldState.entities.tariq.inventory).not.toContain("pain_taverne");
+    expect(result.newWorldState.entities.tariq.inventory).not.toContain(
+      "pain_taverne",
+    );
     expect(result.newWorldState.entities.tariq.hunger).toBeGreaterThan(40);
     expect(result.newWorldState.entities.player.inventory).toEqual([]);
   });
@@ -61,11 +80,23 @@ describe("moteur multi-acteur", () => {
 
   it("construit la perception pour l'observateur explicite", () => {
     const state = createInitialWorldState("Yara");
-    const outcome = { actionType: "examine" as const, success: true, targetName: null, observableFacts: [] };
-    const playerFacts = buildPerceptibleFacts(state, "player", outcome);
-    const tariqFacts = buildPerceptibleFacts(state, "tariq", outcome);
-    expect(playerFacts.locationName).not.toBe(tariqFacts.locationName);
-    expect(tariqFacts.inventoryObjects.map((object) => object.name)).toContain("miche de pain");
+    const outcome = {
+      actionType: "examine" as const,
+      success: true,
+      targetName: null,
+      observableFacts: [],
+    };
+    const playerPerception = buildPerceptibleFacts(state, "player", outcome);
+    const tariqPerception = buildPerceptibleFacts(state, "tariq", outcome);
+    expect(playerPerception.success).toBe(true);
+    expect(tariqPerception.success).toBe(true);
+    if (!playerPerception.success || !tariqPerception.success) return;
+    expect(playerPerception.facts.locationName).not.toBe(
+      tariqPerception.facts.locationName,
+    );
+    expect(
+      tariqPerception.facts.inventoryObjects.map((object) => object.name),
+    ).toContain("miche de pain");
   });
 
   it("retourne un refus explicite pour un acteur inconnu", () => {
@@ -80,7 +111,11 @@ describe("moteur multi-acteur", () => {
   it("refuse explicitement un acteur sans lieu valide", () => {
     const state = createInitialWorldState("Yara");
     state.entities.hamid.locationId = "inconnu";
-    const result = resolveAction(state, "hamid", action("move", "place centrale"));
+    const result = resolveAction(
+      state,
+      "hamid",
+      action("move", "place centrale"),
+    );
     expect(result.success).toBe(false);
     expect(result.event.description).toContain("lieu valide");
   });
@@ -89,8 +124,16 @@ describe("moteur multi-acteur", () => {
     const first = createInitialWorldState("Yara");
     const second = structuredClone(first);
     second.controlledEntityId = "oumou";
-    const firstResult = resolveAction(first, "hamid", action("take", "minerai"));
-    const secondResult = resolveAction(second, "hamid", action("take", "minerai"));
+    const firstResult = resolveAction(
+      first,
+      "hamid",
+      action("take", "minerai"),
+    );
+    const secondResult = resolveAction(
+      second,
+      "hamid",
+      action("take", "minerai"),
+    );
     expect(secondResult.success).toBe(firstResult.success);
     expect(secondResult.newWorldState).toEqual({
       ...firstResult.newWorldState,
