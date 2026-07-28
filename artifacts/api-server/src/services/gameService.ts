@@ -4,13 +4,25 @@
 
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { db, kitabaSessionsTable, kitabaEventsTable, kitabaSavesTable } from "@workspace/db";
+import {
+  db,
+  kitabaSessionsTable,
+  kitabaEventsTable,
+  kitabaSavesTable,
+} from "@workspace/db";
 import { interpretPlayerAction } from "../llm/interpretAction.js";
-import { narrateFromPerception, generateIntroText } from "../llm/narrateResult.js";
+import {
+  narrateFromPerception,
+  generateIntroText,
+} from "../llm/narrateResult.js";
 import { resolveAction } from "../engine/actionResolver.js";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
 import { createSession, loadSession } from "../persistence/worldRepository.js";
-import { loadSave, listManualSaves, pruneAutoSaves } from "../persistence/saveRepository.js";
+import {
+  loadSave,
+  listManualSaves,
+  pruneAutoSaves,
+} from "../persistence/saveRepository.js";
 import { createInitialWorldState } from "../worldSeed.js";
 import { formatWorldDate, getControlledEntity } from "../domain/world.js";
 import type { NarrativeEntry, CharacterStatus } from "../persistence/types.js";
@@ -49,7 +61,11 @@ export async function startNewGame(playerName: string): Promise<{
   };
 
   const narrativeHistory: NarrativeEntry[] = [introEntry];
-  const sessionId = await createSession(worldState.controlledEntityId, worldState, narrativeHistory);
+  const sessionId = await createSession(
+    worldState.controlledEntityId,
+    worldState,
+    narrativeHistory,
+  );
 
   return {
     sessionId,
@@ -62,7 +78,7 @@ export async function startNewGame(playerName: string): Promise<{
 
 export async function processPlayerAction(
   sessionId: string,
-  playerInput: string
+  playerInput: string,
 ): Promise<{
   narrativeEntry: NarrativeEntry;
   characterStatus: CharacterStatus;
@@ -83,10 +99,15 @@ export async function processPlayerAction(
   resolved.event.sessionId = sessionId;
 
   // 3. Construction des faits perceptibles — filtre l'état du monde
-  const facts = buildPerceptibleFacts(resolved.newWorldState, actorId, resolved.actionOutcome);
+  const perception = buildPerceptibleFacts(
+    resolved.newWorldState,
+    actorId,
+    resolved.actionOutcome,
+  );
+  if (!perception.success) return null;
 
   // 4. Narration — ne reçoit que les faits perceptibles
-  const narrationText = narrateFromPerception(facts);
+  const narrationText = narrateFromPerception(perception.facts);
 
   const narrativeEntry: NarrativeEntry = {
     id: randomUUID(),
@@ -107,7 +128,10 @@ export async function processPlayerAction(
       .set({
         worldVersion: newWorldState.worldVersion,
         worldState: newWorldState as unknown as Record<string, unknown>,
-        narrativeHistory: narrativeHistory as unknown as Record<string, unknown>[],
+        narrativeHistory: narrativeHistory as unknown as Record<
+          string,
+          unknown
+        >[],
         updatedAt: new Date(),
       })
       .where(eq(kitabaSessionsTable.id, sessionId));
@@ -137,7 +161,10 @@ export async function processPlayerAction(
       controlledEntityId: newWorldState.controlledEntityId,
       worldVersion: newWorldState.worldVersion,
       worldState: newWorldState as unknown as Record<string, unknown>,
-      narrativeHistory: narrativeHistory as unknown as Record<string, unknown>[],
+      narrativeHistory: narrativeHistory as unknown as Record<
+        string,
+        unknown
+      >[],
     });
   });
 
@@ -153,7 +180,10 @@ export async function processPlayerAction(
 
 // ─── Sauvegarde manuelle ──────────────────────────────────────────────────────
 
-export async function saveGame(sessionId: string, saveName: string): Promise<{
+export async function saveGame(
+  sessionId: string,
+  saveName: string,
+): Promise<{
   saveId: string;
   saveName: string;
   savedAt: string;
@@ -172,7 +202,10 @@ export async function saveGame(sessionId: string, saveName: string): Promise<{
     controlledEntityId: session.controlledEntityId,
     worldVersion: session.worldState.worldVersion,
     worldState: session.worldState as unknown as Record<string, unknown>,
-    narrativeHistory: session.narrativeHistory as unknown as Record<string, unknown>[],
+    narrativeHistory: session.narrativeHistory as unknown as Record<
+      string,
+      unknown
+    >[],
     savedAt,
   });
   return {
@@ -196,7 +229,7 @@ export async function loadSavedGame(saveId: string): Promise<{
   const newSessionId = await createSession(
     save.controlledEntityId,
     save.worldState,
-    save.narrativeHistory
+    save.narrativeHistory,
   );
 
   return {
