@@ -17,7 +17,7 @@ const dummyOutcome: ActionOutcome = {
 describe("knowledgeIsolation", () => {
   it("les PerceptibleFacts ne contiennent pas les notes secrètes des relations", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, dummyOutcome);
+    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
 
     // Les notes de relations sont secrètes — elles ne doivent pas apparaître dans les faits
     const factsJson = JSON.stringify(facts);
@@ -28,7 +28,7 @@ describe("knowledgeIsolation", () => {
 
   it("les PerceptibleFacts ne contiennent pas les inventaires des PNJ", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, dummyOutcome);
+    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
 
     // L'inventaire de Tariq (pain_taverne) est privé et ne doit pas fuiter
     const factsJson = JSON.stringify(facts);
@@ -40,7 +40,7 @@ describe("knowledgeIsolation", () => {
 
   it("les PerceptibleFacts n'exposent que le lieu courant, pas le monde entier", () => {
     const state = createInitialWorldState("Yara");
-    const facts = buildPerceptibleFacts(state, dummyOutcome);
+    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
 
     // Le joueur est place_centrale — la forge et la ferme ne doivent pas être visibles
     const factsJson = JSON.stringify(facts);
@@ -71,7 +71,7 @@ describe("knowledgeIsolation", () => {
   it("seules les entités du lieu courant sont visibles", () => {
     const state = createInitialWorldState("Yara");
     // Yara est place_centrale — Hamid est forge_hamid
-    const facts = buildPerceptibleFacts(state, dummyOutcome);
+    const facts = buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome);
 
     const entityNames = facts.presentEntities.map((e) => e.name);
     expect(entityNames).not.toContain("Hamid");
