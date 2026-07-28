@@ -4,11 +4,10 @@
 // Ne produit aucune narration.
 
 import { randomUUID } from "crypto";
-import type { WorldState } from "../domain/world.js";
+import type { EntityId, WorldState } from "../domain/world.js";
 import type { StructuredAction } from "../domain/actions.js";
 import type { GameEvent } from "../domain/events.js";
 import type { ActionOutcome } from "../domain/knowledge.js";
-import { getControlledEntity } from "../domain/world.js";
 import { validateAction } from "./actionValidator.js";
 import { applyConsequences } from "./consequenceEngine.js";
 import { applyTimeAndDecay } from "./timeEngine.js";
@@ -20,9 +19,13 @@ export interface ResolvedAction {
   actionOutcome: ActionOutcome;
 }
 
-export function resolveAction(state: WorldState, action: StructuredAction): ResolvedAction {
-  const controlled = getControlledEntity(state);
-  const validation = validateAction(state, action);
+export function resolveAction(
+  state: WorldState,
+  actorId: EntityId,
+  action: StructuredAction,
+): ResolvedAction {
+  const controlled = state.entities[actorId];
+  const validation = validateAction(state, actorId, action);
 
   if (!validation.possible) {
     // Action impossible — aucun changement d'état
@@ -31,8 +34,8 @@ export function resolveAction(state: WorldState, action: StructuredAction): Reso
       sessionId: "",            // rempli par gameService après création
       worldVersion: state.worldVersion,
       actionType: action.actionType,
-      actorId: controlled.id,
-      locationId: controlled.locationId,
+      actorId,
+      locationId: controlled?.locationId ?? "",
       targetId: null,
       description: `[BLOQUÉ] ${validation.reason ?? "Action impossible"}`,
       consequences: [],
@@ -48,13 +51,14 @@ export function resolveAction(state: WorldState, action: StructuredAction): Reso
 
     return { success: false, newWorldState: state, event, actionOutcome: outcome };
   }
+  if (!controlled) throw new Error(`Validated actor not found: ${actorId}`);
 
   // Calcule et applique les conséquences
   const { newWorldState: stateAfterConsequences, observableFacts, consequences, targetId } =
-    applyConsequences(state, action);
+    applyConsequences(state, actorId, action);
 
   // Avance le temps et applique le déclin passif
-  const stateAfterTime = applyTimeAndDecay(stateAfterConsequences, action.actionType);
+  const stateAfterTime = applyTimeAndDecay(stateAfterConsequences, actorId, action.actionType);
 
   // Incrémente worldVersion
   const newWorldState: WorldState = {
