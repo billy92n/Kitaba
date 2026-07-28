@@ -23,7 +23,7 @@ describe("actionResolver", () => {
     const before = state.worldVersion;
     const action = makeAction({ actionType: "move", targetName: "lieu_inexistant" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.success).toBe(false);
     expect(result.newWorldState.worldVersion).toBe(before); // inchangé
@@ -34,7 +34,7 @@ describe("actionResolver", () => {
     const state = createInitialWorldState("Yara");
     const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.success).toBe(true);
     expect(result.newWorldState.worldVersion).toBe(state.worldVersion + 1);
@@ -44,7 +44,7 @@ describe("actionResolver", () => {
     const state = createInitialWorldState("Yara");
     const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.event).toBeDefined();
     expect(result.event.actionType).toBe("move");
@@ -57,7 +57,7 @@ describe("actionResolver", () => {
     const state = createInitialWorldState("Yara");
     const action = makeAction({ actionType: "attack", targetName: "quelqu'un" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.success).toBe(false);
     expect(result.event.description).toContain("[BLOQUÉ]");
@@ -67,7 +67,7 @@ describe("actionResolver", () => {
     const state = createInitialWorldState("Yara");
     const action = makeAction({ actionType: "move", targetName: "taverne du loup" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     const entity = result.newWorldState.entities[result.newWorldState.controlledEntityId];
     expect(entity.locationId).toBe("taverne_du_loup");
@@ -77,7 +77,7 @@ describe("actionResolver", () => {
     const state = createInitialWorldState("Yara");
     const action = makeAction({ actionType: "examine", targetName: "fontaine" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     // L'examine réussit toujours côté validator
     expect(result.newWorldState.worldVersion).toBe(state.worldVersion + 1);
