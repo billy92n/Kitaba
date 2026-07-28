@@ -1,92 +1,187 @@
 import type { Entity } from "../domain/entities.js";
-import type { EntityId, WorldLocation, WorldObject, WorldState } from "../domain/world.js";
+import type {
+  EntityId,
+  LocationId,
+  ObjectId,
+  WorldLocation,
+  WorldObject,
+  WorldState,
+} from "../domain/world.js";
 
-export function normalizeTarget(value: string): string {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, "").trim();
+export type ObjectAvailability =
+  "ACTOR_INVENTORY" | "GROUND" | "OTHER_INVENTORY";
+
+export interface ResolvedObject {
+  object: WorldObject;
+  availability: ObjectAvailability;
 }
 
-export function findLocationByQuery(state: WorldState, query: string | null): WorldLocation | null {
-  if (!query) return null;
-  const stripped = query.replace(/^(la|le|les|l'|du|au|aux|un|une)\s+/i, "").trim();
-  const normalized = normalizeTarget(stripped || query);
-  return Object.values(state.locations).find((location) => {
-    const name = normalizeTarget(location.name);
-    return name.includes(normalized) ||
-      normalized.includes(normalizeTarget(location.id)) ||
-      name.split(" ").some((word) => word.length > 3 && normalized.includes(word));
-  }) ?? null;
+export type ResolvedInspectable =
+  | { kind: "OBJECT"; id: ObjectId; name: string; description: string }
+  | { kind: "ENTITY"; id: EntityId; name: string; description: string }
+  | { kind: "LOCATION"; id: LocationId; name: string; description: string };
+
+export function normalizeTarget(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, " ")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizedQuery(query: string | null): string | null {
+  if (query === null) return null;
+  const normalized = normalizeTarget(query);
+  return normalized.length === 0 ? null : normalized;
+}
+
+function matchRank(id: string, name: string, query: string): number | null {
+  const normalizedId = normalizeTarget(id);
+  const normalizedName = normalizeTarget(name);
+  if (normalizedId === query || normalizedName === query) return 0;
+  if (normalizedName.startsWith(query)) return 1;
+  if (normalizedName.includes(query)) return 2;
+  if (normalizedId.includes(query)) return 3;
+  return null;
+}
+
+function bestMatch<T extends { id: string; name: string }>(
+  candidates: readonly T[],
+  query: string,
+): T | null {
+  let selected: T | null = null;
+  let selectedRank = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const rank = matchRank(candidate.id, candidate.name, query);
+    if (rank !== null && rank < selectedRank) {
+      selected = candidate;
+      selectedRank = rank;
+    }
+  }
+  return selected;
+}
+
+export function findLocationByQuery(
+  state: WorldState,
+  query: string | null,
+): WorldLocation | null {
+  if (query === null) return null;
+  const stripped = query.replace(
+    /^(la|le|les|l['’]|du|de la|de l['’]|au|aux|un|une)\s*/i,
+    "",
+  );
+  const normalized = normalizedQuery(stripped.length > 0 ? stripped : query);
+  return normalized
+    ? bestMatch(Object.values(state.locations), normalized)
+    : null;
 }
 
 export function findEntityAtLocation(
   state: WorldState,
   actorId: EntityId,
-  locationId: string,
+  locationId: LocationId,
   query: string | null,
 ): Entity | null {
-  if (!query) return null;
-  const normalized = normalizeTarget(query);
-  return Object.values(state.entities).find(
-    (entity) =>
-      entity.locationId === locationId &&
-      entity.id !== actorId &&
-      normalizeTarget(entity.name).includes(normalized),
-  ) ?? null;
+  const normalized = normalizedQuery(query);
+  if (!normalized) return null;
+  return bestMatch(
+    Object.values(state.entities).filter(
+      (entity) => entity.locationId === locationId && entity.id !== actorId,
+    ),
+    normalized,
+  );
 }
 
-export function findObjectAvailable(
+/**
+ * Priorité stable conservant le comportement historique :
+ * inventaire de l'acteur, objets au sol, puis objets portés par une autre
+ * entité présente. Cette dernière catégorie reste une décision métier ouverte.
+ */
+export function resolveObjectInActorContext(
   state: WorldState,
   actorId: EntityId,
   query: string | null,
-): WorldObject | null {
-  if (!query) return null;
+): ResolvedObject | null {
   const actor = state.entities[actorId];
-  if (!actor) return null;
-  const normalized = normalizeTarget(query);
-  for (const objectId of actor.inventory) {
-    const object = state.objects[objectId];
-    if (object && normalizeTarget(object.name).includes(normalized)) return object;
-  }
-  return Object.values(state.objects).find(
-    (object) =>
-      (object.locationId === actor.locationId ||
-        (object.ownerId !== null && state.entities[object.ownerId]?.locationId === actor.locationId)) &&
-      normalizeTarget(object.name).includes(normalized),
-  ) ?? null;
+  const normalized = normalizedQuery(query);
+  if (!actor || !normalized) return null;
+
+  const inventoryObject = bestMatch(
+    actor.inventory.flatMap((id) => {
+      const object = state.objects[id];
+      return object ? [object] : [];
+    }),
+    normalized,
+  );
+  if (inventoryObject)
+    return { object: inventoryObject, availability: "ACTOR_INVENTORY" };
+
+  const groundObject = bestMatch(
+    Object.values(state.objects).filter(
+      (object) =>
+        object.locationId === actor.locationId && object.ownerId === null,
+    ),
+    normalized,
+  );
+  if (groundObject) return { object: groundObject, availability: "GROUND" };
+
+  const otherInventoryObject = bestMatch(
+    Object.values(state.objects).filter(
+      (object) =>
+        object.ownerId !== null &&
+        object.ownerId !== actorId &&
+        state.entities[object.ownerId]?.locationId === actor.locationId,
+    ),
+    normalized,
+  );
+  return otherInventoryObject
+    ? { object: otherInventoryObject, availability: "OTHER_INVENTORY" }
+    : null;
 }
 
-export function findAnything(
+export function findInspectable(
   state: WorldState,
   observerId: EntityId,
   query: string | null,
-): { name: string; description: string } | null {
-  if (!query) return null;
+): ResolvedInspectable | null {
   const observer = state.entities[observerId];
-  if (!observer) return null;
-  const normalized = normalizeTarget(query);
-  for (const object of Object.values(state.objects)) {
-    if ((object.locationId === observer.locationId || observer.inventory.includes(object.id)) &&
-        normalizeTarget(object.name).includes(normalized)) {
-      return { name: object.name, description: object.description };
-    }
-  }
-  for (const entity of Object.values(state.entities)) {
-    if (entity.locationId === observer.locationId && normalizeTarget(entity.name).includes(normalized)) {
-      return { name: entity.name, description: entity.description };
-    }
-  }
+  const normalized = normalizedQuery(query);
+  if (!observer || !normalized) return null;
+
+  const object = bestMatch(
+    Object.values(state.objects).filter(
+      (candidate) =>
+        candidate.locationId === observer.locationId ||
+        observer.inventory.includes(candidate.id),
+    ),
+    normalized,
+  );
+  if (object) return { kind: "OBJECT", ...object };
+
+  const entity = bestMatch(
+    Object.values(state.entities).filter(
+      (candidate) =>
+        candidate.id !== observerId &&
+        candidate.locationId === observer.locationId,
+    ),
+    normalized,
+  );
+  if (entity) return { kind: "ENTITY", ...entity };
+
   const location = state.locations[observer.locationId];
   if (!location) return null;
-  if (normalizeTarget(location.name).includes(normalized)) {
-    return { name: location.name, description: location.description };
-  }
-  for (const connectedId of location.connectedLocations) {
-    const connected = state.locations[connectedId];
-    if (connected && normalizeTarget(connected.name).includes(normalized)) {
-      return { name: connected.name, description: connected.description };
-    }
-  }
-  if (normalized.length < 3 || normalized.includes("lieu") || normalized.includes("endroit")) {
-    return { name: location.name, description: location.description };
-  }
-  return null;
+  const locationMatch = bestMatch(
+    [
+      location,
+      ...location.connectedLocations.flatMap((id) => {
+        const connected = state.locations[id];
+        return connected ? [connected] : [];
+      }),
+    ],
+    normalized,
+  );
+  return locationMatch ? { kind: "LOCATION", ...locationMatch } : null;
 }
