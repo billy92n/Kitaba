@@ -43,3 +43,6 @@ jobs:
 
       - name: Check
         run: pnpm run check
+
+      - name: Engine coverage
+        run: pnpm run test:coverage
