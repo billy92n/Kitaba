@@ -1,65 +1,85 @@
-// engine/perceptionEngine.ts — Construit les PerceptibleFacts de l'entité contrôlée.
-// Filtre rigoureusement l'état du monde : seules les informations perceptibles passent.
-// Le module de narration ne recevra que cette structure — jamais WorldState directement.
+// Construit une vue filtrée pour un observateur explicite.
 
+import type { ActionOutcome, PerceptibleFacts } from "../domain/knowledge.js";
 import type { EntityId, WorldState } from "../domain/world.js";
-import type { ActionOutcome } from "../domain/knowledge.js";
-import type { PerceptibleFacts } from "../domain/knowledge.js";
+
+export type PerceptionFailureCode =
+  "OBSERVER_NOT_FOUND" | "OBSERVER_LOCATION_NOT_FOUND";
+
+export type PerceptionResult =
+  | { success: true; facts: PerceptibleFacts }
+  | { success: false; code: PerceptionFailureCode; reason: string };
 
 export function buildPerceptibleFacts(
   state: WorldState,
   observerId: EntityId,
-  outcome: ActionOutcome
-): PerceptibleFacts {
-  const controlled = state.entities[observerId];
-  if (!controlled) throw new Error(`Observer not found: ${observerId}`);
-  const location = state.locations[controlled.locationId];
+  outcome: ActionOutcome,
+): PerceptionResult {
+  const observer = state.entities[observerId];
+  if (!observer) {
+    return {
+      success: false,
+      code: "OBSERVER_NOT_FOUND",
+      reason: `Observateur introuvable : ${observerId}.`,
+    };
+  }
+  const location = state.locations[observer.locationId];
+  if (!location) {
+    return {
+      success: false,
+      code: "OBSERVER_LOCATION_NOT_FOUND",
+      reason: `L'observateur ${observerId} n'a pas de lieu valide.`,
+    };
+  }
 
-  // Entités présentes dans le lieu — sauf l'entité contrôlée elle-même
-  const presentEntities = (location?.presentEntities ?? [])
-    .filter((id) => id !== controlled.id)
-    .map((id) => state.entities[id])
-    .filter(Boolean)
-    .map((e) => ({
-      name: e.name,
-      occupation: e.occupation,
-      mood: e.mood,
-      // NOTE : on n'expose pas les notes secrètes des relations, ni l'inventaire des PNJ
-    }));
-
-  // Objets visibles au sol dans le lieu (pas ceux dans les inventaires)
-  const presentObjects = (location?.presentObjects ?? [])
-    .map((id) => state.objects[id])
-    .filter(Boolean)
-    .map((o) => ({ name: o.name, description: o.description }));
-
-  // Inventaire du personnage contrôlé
-  const inventoryObjects = controlled.inventory
-    .map((id) => state.objects[id])
-    .filter(Boolean)
-    .map((o) => ({ name: o.name, description: o.description }));
-
-  // Stats vitales — seulement si l'entité en possède
+  const presentEntities = location.presentEntities.flatMap((id) => {
+    if (id === observer.id) return [];
+    const entity = state.entities[id];
+    return entity
+      ? [
+          {
+            name: entity.name,
+            occupation: entity.occupation,
+            mood: entity.mood,
+          },
+        ]
+      : [];
+  });
+  const presentObjects = location.presentObjects.flatMap((id) => {
+    const object = state.objects[id];
+    return object
+      ? [{ name: object.name, description: object.description }]
+      : [];
+  });
+  const inventoryObjects = observer.inventory.flatMap((id) => {
+    const object = state.objects[id];
+    return object
+      ? [{ name: object.name, description: object.description }]
+      : [];
+  });
   const entityStats =
-    controlled.hunger !== undefined &&
-    controlled.fatigue !== undefined &&
-    controlled.health !== undefined
+    observer.hunger !== undefined &&
+    observer.fatigue !== undefined &&
+    observer.health !== undefined
       ? {
-          hunger: Math.round(controlled.hunger),
-          fatigue: Math.round(controlled.fatigue),
-          health: Math.round(controlled.health),
+          hunger: Math.round(observer.hunger),
+          fatigue: Math.round(observer.fatigue),
+          health: Math.round(observer.health),
         }
       : null;
 
   return {
-    actorName: controlled.name,
-    locationName: location?.name ?? "lieu inconnu",
-    locationDescription: location?.description ?? "",
-    presentEntities,
-    presentObjects,
-    inventoryObjects,
-    worldTime: state.time,
-    entityStats,
-    actionOutcome: outcome,
+    success: true,
+    facts: {
+      actorName: observer.name,
+      locationName: location.name,
+      locationDescription: location.description,
+      presentEntities,
+      presentObjects,
+      inventoryObjects,
+      worldTime: state.time,
+      entityStats,
+      actionOutcome: outcome,
+    },
   };
 }
