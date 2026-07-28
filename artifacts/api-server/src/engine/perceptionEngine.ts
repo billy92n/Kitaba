@@ -2,16 +2,17 @@
 // Filtre rigoureusement l'état du monde : seules les informations perceptibles passent.
 // Le module de narration ne recevra que cette structure — jamais WorldState directement.
 
-import type { WorldState } from "../domain/world.js";
+import type { EntityId, WorldState } from "../domain/world.js";
 import type { ActionOutcome } from "../domain/knowledge.js";
 import type { PerceptibleFacts } from "../domain/knowledge.js";
-import { getControlledEntity } from "../domain/world.js";
 
 export function buildPerceptibleFacts(
   state: WorldState,
+  observerId: EntityId,
   outcome: ActionOutcome
 ): PerceptibleFacts {
-  const controlled = getControlledEntity(state);
+  const controlled = state.entities[observerId];
+  if (!controlled) throw new Error(`Observer not found: ${observerId}`);
   const location = state.locations[controlled.locationId];
 
   // Entités présentes dans le lieu — sauf l'entité contrôlée elle-même
