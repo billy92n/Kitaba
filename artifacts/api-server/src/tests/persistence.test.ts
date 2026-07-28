@@ -25,7 +25,7 @@ describe("persistance — logique de cohérence", () => {
 
     let version = state.worldVersion;
     for (const action of actions) {
-      const result = resolveAction(state, action);
+      const result = resolveAction(state, state.controlledEntityId, action);
       if (result.success) {
         expect(result.newWorldState.worldVersion).toBe(version + 1);
         version = result.newWorldState.worldVersion;
@@ -38,7 +38,7 @@ describe("persistance — logique de cohérence", () => {
     const state = createInitialWorldState("Reza");
     const action = makeAction({ actionType: "move", targetName: "château_invisible" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     expect(result.success).toBe(false);
     expect(result.newWorldState.worldVersion).toBe(state.worldVersion);
@@ -52,7 +52,7 @@ describe("persistance — logique de cohérence", () => {
         makeAction({ actionType: "examine", targetName: "tariq" }),
       ];
       for (const action of actions) {
-        const result = resolveAction(state, action);
+        const result = resolveAction(state, state.controlledEntityId, action);
         if (result.success) state = result.newWorldState;
       }
       return state;
@@ -80,7 +80,7 @@ describe("persistance — logique de cohérence", () => {
     const state = createInitialWorldState("Nour");
     const action = makeAction({ actionType: "move", targetName: "forge" });
 
-    const result = resolveAction(state, action);
+    const result = resolveAction(state, state.controlledEntityId, action);
 
     if (result.success) {
       expect(result.event.worldVersion).toBe(result.newWorldState.worldVersion);
