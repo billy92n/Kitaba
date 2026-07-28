@@ -11,7 +11,13 @@ import type { StructuredAction } from "../domain/actions.js";
 // Le worldVersion est la clé d'idempotence : un doublon = même version → rejeté.
 
 function makeAction(overrides: Partial<StructuredAction>): StructuredAction {
-  return { actionType: "unknown", targetName: null, details: "", rawInput: "", ...overrides };
+  return {
+    actionType: "unknown",
+    targetName: null,
+    details: "",
+    rawInput: "",
+    ...overrides,
+  };
 }
 
 describe("persistance — logique de cohérence", () => {
@@ -36,7 +42,10 @@ describe("persistance — logique de cohérence", () => {
 
   it("une action bloquée ne change pas worldVersion", () => {
     const state = createInitialWorldState("Reza");
-    const action = makeAction({ actionType: "move", targetName: "château_invisible" });
+    const action = makeAction({
+      actionType: "move",
+      targetName: "château_invisible",
+    });
 
     const result = resolveAction(state, state.controlledEntityId, action);
 
