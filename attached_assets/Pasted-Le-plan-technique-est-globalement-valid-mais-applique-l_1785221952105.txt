@@ -1,0 +1,66 @@
+Le plan technique est globalement validé, mais applique les corrections architecturales suivantes avant de poursuivre.
+
+1. Le personnage contrôlé par le joueur doit être une entité normale du monde. Ne crée aucune structure métier spéciale « player ». La session doit uniquement contenir un controlledEntityId.
+2. Sépare les types du monde de son état actif. worldState.ts ne doit pas conserver un monde global en mémoire.
+3. Le module LLM d’interprétation doit produire une action structurée et validée par un schéma strict. Il ne doit jamais modifier le monde.
+4. Renomme actionEngine.ts en actionResolver.ts. Ce module ne doit pas interpréter le langage naturel. Il reçoit une action déjà structurée, vérifie sa possibilité, calcule les conséquences et retourne un résultat structuré.
+5. Le moteur ne doit jamais produire de narration. Il doit retourner des événements, des changements d’état et les faits perceptibles.
+6. Le module de narration ne doit recevoir que les informations perceptibles ou connues par l’entité contrôlée. Ne lui transmets jamais l’état complet du monde.
+7. Conserve un journal persistant des événements en plus des snapshots du monde.
+8. Chaque traitement d’action doit être effectué dans une transaction PostgreSQL atomique.
+9. Ajoute un worldVersion incrémenté après chaque action réussie afin d’éviter les conflits et les doubles traitements.
+10. Ajoute une sauvegarde automatique après chaque action. Les sauvegardes manuelles nommées doivent être séparées. Le chargement d’une ancienne sauvegarde doit créer une nouvelle branche de session plutôt qu’écraser silencieusement l’histoire actuelle.
+
+Structure recommandée :
+
+domain/
+
+* entities.ts
+* relations.ts
+* events.ts
+* actions.ts
+* knowledge.ts
+* world.ts
+
+engine/
+
+* actionValidator.ts
+* actionResolver.ts
+* consequenceEngine.ts
+* perceptionEngine.ts
+* timeEngine.ts
+
+llm/
+
+* interpretAction.ts
+* narrateResult.ts
+* schemas.ts
+
+persistence/
+
+* worldRepository.ts
+* eventRepository.ts
+* saveRepository.ts
+* schema.ts
+
+services/
+
+* gameService.ts
+
+routes/
+
+* game.ts
+
+tests/
+
+* actionResolver.test.ts
+* persistence.test.ts
+* knowledgeIsolation.test.ts
+
+Ne développe aucune nouvelle fonctionnalité de jeu. Commence par réorganiser l’architecture, décrire les contrats entre modules, puis exécute les tests existants. Ajoute ensuite des tests prouvant que :
+
+* le narrateur ne connaît pas les informations secrètes ;
+* une action impossible ne modifie rien ;
+* une action réussie crée un événement persistant ;
+* recharger la page conserve la progression ;
+* le personnage contrôlé utilise exactement le même modèle qu’un PNJ.

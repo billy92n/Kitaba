@@ -1,199 +1,100 @@
-// game.ts — Routes du jeu Kitaba. La vérité du monde est toujours en base de données.
+// routes/game.ts — Endpoints HTTP du jeu Kitaba.
+// Les routes délèguent tout au gameService — aucune logique métier ici.
 
 import { Router, type Request, type Response } from "express";
-import { randomUUID } from "crypto";
-import { createInitialWorldState } from "../modules/worldSeed.js";
-import { interpretPlayerAction } from "../modules/llmInterpret.js";
-import { processAction } from "../modules/actionEngine.js";
-import { generateNarration, generateIntroText } from "../modules/llmNarrate.js";
-import { createSession, loadSession, updateSession, createSave, loadSave, listSaves } from "../modules/storage.js";
-import { formatWorldDate, WorldState } from "../modules/worldState.js";
-import type { NarrativeEntry, CharacterStatus } from "../modules/types.js";
+import {
+  startNewGame,
+  processPlayerAction,
+  saveGame,
+  loadSavedGame,
+  getManualSaves,
+} from "../services/gameService.js";
 
 const router = Router();
 
-// Construit le statut du personnage depuis l'état du monde
-function buildCharacterStatus(state: WorldState): CharacterStatus {
-  const loc = state.locations[state.player.locationId];
-  return {
-    name: state.player.name,
-    locationName: loc?.name ?? "Inconnu",
-    worldDate: formatWorldDate(state.time),
-    hunger: Math.round(state.player.hunger),
-    fatigue: Math.round(state.player.fatigue),
-    health: Math.round(state.player.health),
-  };
-}
-
 // POST /api/game/new — Démarre une nouvelle partie
 router.post("/game/new", async (req: Request, res: Response) => {
+  const { playerName } = req.body as { playerName?: string };
+  if (!playerName || typeof playerName !== "string" || playerName.trim().length === 0) {
+    res.status(400).json({ error: "Le nom du personnage est requis." });
+    return;
+  }
   try {
-    const { playerName } = req.body as { playerName: string };
-
-    if (!playerName || typeof playerName !== "string" || playerName.trim().length === 0) {
-      res.status(400).json({ error: "Le nom du personnage est requis." });
-      return;
-    }
-
-    const worldState = createInitialWorldState(playerName.trim());
-    const introText = generateIntroText(worldState);
-
-    const introEntry: NarrativeEntry = {
-      id: randomUUID(),
-      type: "system",
-      text: introText,
-      timestamp: new Date().toISOString(),
-    };
-
-    const narrativeHistory: NarrativeEntry[] = [introEntry];
-
-    const sessionId = await createSession(playerName.trim(), worldState, narrativeHistory);
-
-    res.json({
-      sessionId,
-      characterStatus: buildCharacterStatus(worldState),
-      narrativeHistory,
-      introText,
-    });
+    const result = await startNewGame(playerName);
+    res.json(result);
   } catch (err) {
-    req.log.error({ err }, "Erreur lors de la création de la partie");
+    req.log.error({ err }, "Erreur game/new");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
 // POST /api/game/action — Traite une action du joueur
 router.post("/game/action", async (req: Request, res: Response) => {
+  const { sessionId, playerInput } = req.body as { sessionId?: string; playerInput?: string };
+  if (!sessionId || !playerInput) {
+    res.status(400).json({ error: "sessionId et playerInput sont requis." });
+    return;
+  }
   try {
-    const { sessionId, playerInput } = req.body as { sessionId: string; playerInput: string };
-
-    if (!sessionId || !playerInput) {
-      res.status(400).json({ error: "sessionId et playerInput sont requis." });
-      return;
-    }
-
-    // Charge l'état depuis la base — le LLM ne détient jamais la vérité
-    const session = await loadSession(sessionId);
-    if (!session) {
+    const result = await processPlayerAction(sessionId, playerInput);
+    if (!result) {
       res.status(404).json({ error: "Session introuvable." });
       return;
     }
-
-    const { worldState, narrativeHistory } = session;
-
-    // 1. Interprétation de l'intention (faux LLM)
-    const interpreted = interpretPlayerAction(playerInput.trim());
-
-    // 2. Vérification et application dans le monde réel (moteur déterministe)
-    const actionResult = processAction(worldState, interpreted);
-
-    // 3. Génération de la narration (faux LLM)
-    const narration = generateNarration(actionResult, worldState);
-
-    const narrativeEntry: NarrativeEntry = {
-      id: randomUUID(),
-      type: "narrator",
-      text: narration,
-      timestamp: new Date().toISOString(),
-    };
-
-    narrativeHistory.push(narrativeEntry);
-
-    // 4. Sauvegarde du nouvel état en base
-    await updateSession(sessionId, worldState, narrativeHistory);
-
-    res.json({
-      sessionId,
-      narrativeEntry,
-      characterStatus: buildCharacterStatus(worldState),
-    });
+    res.json({ sessionId, ...result });
   } catch (err) {
-    req.log.error({ err }, "Erreur lors du traitement de l'action");
+    req.log.error({ err }, "Erreur game/action");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// POST /api/game/save — Sauvegarde nommée
+// POST /api/game/save — Sauvegarde manuelle nommée
 router.post("/game/save", async (req: Request, res: Response) => {
+  const { sessionId, saveName } = req.body as { sessionId?: string; saveName?: string };
+  if (!sessionId || !saveName) {
+    res.status(400).json({ error: "sessionId et saveName sont requis." });
+    return;
+  }
   try {
-    const { sessionId, saveName } = req.body as { sessionId: string; saveName: string };
-
-    if (!sessionId || !saveName) {
-      res.status(400).json({ error: "sessionId et saveName sont requis." });
-      return;
-    }
-
-    const session = await loadSession(sessionId);
-    if (!session) {
+    const saveId = await saveGame(sessionId, saveName);
+    if (!saveId) {
       res.status(404).json({ error: "Session introuvable." });
       return;
     }
-
-    const { worldState, narrativeHistory } = session;
-    const savedAt = new Date().toISOString();
-
-    const saveId = await createSave(
-      sessionId,
-      worldState.player.name,
-      saveName.trim(),
-      worldState,
-      narrativeHistory
-    );
-
-    res.json({ saveId, saveName: saveName.trim(), savedAt });
+    res.json({ saveId, message: "Partie sauvegardée." });
   } catch (err) {
-    req.log.error({ err }, "Erreur lors de la sauvegarde");
+    req.log.error({ err }, "Erreur game/save");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// POST /api/game/load — Charge une sauvegarde
+// POST /api/game/load — Charge une sauvegarde (crée une nouvelle branche)
 router.post("/game/load", async (req: Request, res: Response) => {
+  const { saveId } = req.body as { saveId?: string };
+  if (!saveId) {
+    res.status(400).json({ error: "saveId est requis." });
+    return;
+  }
   try {
-    const { saveId } = req.body as { saveId: string };
-
-    if (!saveId) {
-      res.status(400).json({ error: "saveId est requis." });
-      return;
-    }
-
-    const save = await loadSave(saveId);
-    if (!save) {
+    const result = await loadSavedGame(saveId);
+    if (!result) {
       res.status(404).json({ error: "Sauvegarde introuvable." });
       return;
     }
-
-    // Crée une nouvelle session à partir de la sauvegarde
-    const newSessionId = await createSession(
-      save.playerName,
-      save.worldState,
-      save.narrativeHistory
-    );
-
-    res.json({
-      sessionId: newSessionId,
-      characterStatus: buildCharacterStatus(save.worldState),
-      narrativeHistory: save.narrativeHistory,
-    });
+    res.json(result);
   } catch (err) {
-    req.log.error({ err }, "Erreur lors du chargement");
+    req.log.error({ err }, "Erreur game/load");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });
 
-// GET /api/game/saves — Liste des sauvegardes
+// GET /api/game/saves — Liste les sauvegardes manuelles
 router.get("/game/saves", async (req: Request, res: Response) => {
   try {
-    const saves = await listSaves();
-    res.json({
-      saves: saves.map((s) => ({
-        saveId: s.saveId,
-        saveName: s.saveName,
-        characterName: s.playerName,
-        savedAt: s.savedAt,
-      })),
-    });
+    const saves = await getManualSaves();
+    res.json({ saves });
   } catch (err) {
-    req.log.error({ err }, "Erreur lors du listing des sauvegardes");
+    req.log.error({ err }, "Erreur game/saves");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 });

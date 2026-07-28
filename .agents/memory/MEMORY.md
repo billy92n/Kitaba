@@ -1,0 +1,2 @@
+- [Kitaba architecture](kitaba-architecture.md) — pipeline LLM→engine→perception→narration ; contrats stricts entre couches ; worldVersion + transactions atomiques
+- [Kitaba DB migration TTY](kitaba-db-migration.md) — drizzle-kit push échoue sans TTY ; appliquer via SQL direct + recompiler lib/db avant typecheck api-server

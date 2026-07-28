@@ -1,4 +1,4 @@
-// types.ts — Types partagés entre les modules du serveur.
+// persistence/types.ts — Types partagés entre persistence et routes.
 
 export interface NarrativeEntry {
   id: string;
