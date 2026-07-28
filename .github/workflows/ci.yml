@@ -1,8 +1,5 @@
 name: CI
 
-permissions:
-  contents: write
-
 on:
   push:
     branches:
@@ -40,13 +37,6 @@ jobs:
 
       - name: Generate OpenAPI clients
         run: pnpm --filter @workspace/api-spec run codegen
-
-      - name: Commit generated clients
-        if: matrix.os == 'ubuntu-latest'
-        uses: stefanzweifel/git-auto-commit-action@v6
-        with:
-          commit_message: Regenerate OpenAPI clients
-          file_pattern: lib/api-client-react/src/generated lib/api-zod/src/generated
 
       - name: Verify generated clients are committed
         run: git diff --exit-code -- lib/api-client-react/src/generated lib/api-zod/src/generated
