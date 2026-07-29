@@ -114,7 +114,7 @@ export function applyConsequences(
         },
         observableFacts: [`${object.name} est maintenant dans vos affaires.`],
         consequences: [
-          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}→${actor.id}`,
+          `object:${object.id}:source:${context.availability}→owner:${actor.id}`,
         ],
         targetId: object.id,
         actorAfter: entities[actor.id],
