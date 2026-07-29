@@ -19,6 +19,18 @@ export const ACTION_TYPES = [
 
 export type ActionType = (typeof ACTION_TYPES)[number];
 
+const AUTONOMOUS_TARGETED_ACTION_TYPES: ReadonlySet<ActionType> = new Set([
+  "move",
+  "speak",
+  "take",
+  "examine",
+  "eat",
+]);
+
+export function actionRequiresCanonicalTarget(actionType: ActionType): boolean {
+  return AUTONOMOUS_TARGETED_ACTION_TYPES.has(actionType);
+}
+
 export interface StructuredAction {
   actionType: ActionType;
   targetName: string | null;
