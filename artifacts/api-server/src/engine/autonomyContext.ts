@@ -1,5 +1,6 @@
 import type { StructuredAction } from "../domain/actions.js";
 import {
+  isCanonicalAutonomyIdentity,
   resolveAutonomyDecisionState,
   resolveAutonomyProfile,
   type AutonomyDecisionState,
@@ -54,7 +55,10 @@ export interface AutonomousDecisionInput {
 }
 
 export type AutonomousContextFailureCode =
-  "ACTOR_NOT_FOUND" | "ACTOR_LOCATION_NOT_FOUND" | "INVALID_AUTONOMY_STATE";
+  | "ACTOR_NOT_FOUND"
+  | "ACTOR_LOCATION_NOT_FOUND"
+  | "INVALID_AUTONOMY_IDENTITY"
+  | "INVALID_AUTONOMY_STATE";
 
 export type AutonomousContextResult =
   | { success: true; input: AutonomousDecisionInput }
@@ -196,12 +200,28 @@ export function buildAutonomousDecisionInput(
   actorId: EntityId,
   observedEvent?: GameEvent,
 ): AutonomousContextResult {
+  if (!isCanonicalAutonomyIdentity(actorId)) {
+    return {
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+      reason:
+        "actorId must be a non-empty string without peripheral whitespace.",
+    };
+  }
   const storedActor = state.entities[actorId];
   if (!storedActor) {
     return {
       success: false,
       code: "ACTOR_NOT_FOUND",
       reason: `Actor not found: ${actorId}.`,
+    };
+  }
+  if (!isCanonicalAutonomyIdentity(storedActor.locationId)) {
+    return {
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+      reason:
+        "actor.locationId must be a non-empty string without peripheral whitespace.",
     };
   }
   if (!state.locations[storedActor.locationId]) {
