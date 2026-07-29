@@ -14,6 +14,7 @@ import type {
   WorldState,
   WorldTime,
 } from "../domain/world.js";
+import { normalizeWorldTime } from "../domain/world.js";
 import { validateAction } from "./actionValidator.js";
 import { resolveObservedAction } from "./perceptionEngine.js";
 import { catchUpEntity } from "./timeEngine.js";
@@ -28,6 +29,7 @@ export type CandidateSource =
 export interface PreparedAutonomousCandidate {
   candidateKey: string;
   action: StructuredAction;
+  targetId?: string;
   source: CandidateSource;
   eligibility:
     { eligible: true } | { eligible: false; code: string; reason: string };
@@ -36,6 +38,7 @@ export interface PreparedAutonomousCandidate {
 export interface AutonomousActorSnapshot {
   actorId: EntityId;
   actorName: string;
+  locationId: string;
   hunger: number | null;
   fatigue: number | null;
   health: number | null;
@@ -54,7 +57,7 @@ export type AutonomousContextFailureCode =
   "ACTOR_NOT_FOUND" | "ACTOR_LOCATION_NOT_FOUND" | "INVALID_AUTONOMY_STATE";
 
 export type AutonomousContextResult =
-  | { success: true; input: AutonomousDecisionInput; activeState: WorldState }
+  | { success: true; input: AutonomousDecisionInput }
   | {
       success: false;
       code: AutonomousContextFailureCode;
@@ -64,6 +67,7 @@ export type AutonomousContextResult =
 interface CandidateDraft {
   candidateKey: string;
   action: StructuredAction;
+  targetId?: string;
   source: CandidateSource;
 }
 
@@ -75,9 +79,7 @@ function action(
 }
 
 function compareText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return Number(left > right) - Number(left < right);
 }
 
 function prepareCandidates(
@@ -94,56 +96,74 @@ function prepareCandidates(
     },
   ];
 
-  for (const locationId of [...location.connectedLocations].sort(compareText)) {
+  for (const locationId of [...new Set(location.connectedLocations)].sort(
+    compareText,
+  )) {
     const target = state.locations[locationId];
     if (!target) continue;
     drafts.push({
       candidateKey: `move:${target.id}`,
       action: action("move", target.name),
+      targetId: target.id,
       source: "CONNECTED_LOCATION",
     });
   }
 
-  for (const entityId of [...location.presentEntities].sort(compareText)) {
+  for (const entityId of [...new Set(location.presentEntities)].sort(
+    compareText,
+  )) {
     if (entityId === actorId) continue;
     const target = state.entities[entityId];
-    if (!target) continue;
+    if (!target || target.locationId !== actor.locationId) continue;
     drafts.push({
       candidateKey: `speak:${target.id}`,
       action: action("speak", target.name),
+      targetId: target.id,
       source: "PRESENT_ENTITY",
     });
   }
 
-  for (const objectId of [...location.presentObjects].sort(compareText)) {
+  for (const objectId of [...new Set(location.presentObjects)].sort(
+    compareText,
+  )) {
     const object = state.objects[objectId];
-    if (!object) continue;
+    if (
+      !object ||
+      object.locationId !== actor.locationId ||
+      object.ownerId !== null
+    ) {
+      continue;
+    }
     drafts.push(
       {
         candidateKey: `take:${object.id}`,
         action: action("take", object.name),
+        targetId: object.id,
         source: "PRESENT_OBJECT",
       },
       {
         candidateKey: `examine:${object.id}`,
         action: action("examine", object.name),
+        targetId: object.id,
         source: "PRESENT_OBJECT",
       },
     );
   }
 
-  for (const objectId of [...actor.inventory].sort(compareText)) {
+  for (const objectId of [...new Set(actor.inventory)].sort(compareText)) {
     const object = state.objects[objectId];
-    if (!object) continue;
+    if (!object || object.ownerId !== actorId) continue;
     drafts.push(
       {
         candidateKey: `eat:${object.id}`,
         action: action("eat", object.name),
+        targetId: object.id,
         source: "OWN_INVENTORY",
       },
       {
         candidateKey: `examine:${object.id}`,
         action: action("examine", object.name),
+        targetId: object.id,
         source: "OWN_INVENTORY",
       },
     );
@@ -152,7 +172,12 @@ function prepareCandidates(
   return drafts
     .sort((left, right) => compareText(left.candidateKey, right.candidateKey))
     .map((draft) => {
-      const validation = validateAction(state, actorId, draft.action);
+      const validation = validateAction(
+        state,
+        actorId,
+        draft.action,
+        draft.targetId,
+      );
       return {
         ...draft,
         eligibility: validation.possible
@@ -198,11 +223,11 @@ export function buildAutonomousDecisionInput(
           };
     return {
       success: true,
-      activeState,
       input: {
         actor: {
           actorId,
           actorName: actor.name,
+          locationId: actor.locationId,
           hunger: actor.hunger ?? null,
           fatigue: actor.fatigue ?? null,
           health: actor.health ?? null,
@@ -210,10 +235,7 @@ export function buildAutonomousDecisionInput(
           previousDecision: resolveAutonomyDecisionState(
             actor.autonomyDecisionState,
           ),
-          worldTime: {
-            ...activeState.time,
-            minute: activeState.time.minute ?? 0,
-          },
+          worldTime: normalizeWorldTime(activeState.time),
           observedAction: observedEvent
             ? resolveObservedAction(activeState, actorId, observedEvent)
             : null,
