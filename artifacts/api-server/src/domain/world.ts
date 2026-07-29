@@ -47,6 +47,11 @@ export interface WorldState {
   objects: Record<ObjectId, WorldObject>;
   relations: import("./relations.js").Relation[];
   time: WorldTime;
+  /**
+   * Optional for backward compatibility. Historical saves are bootstrapped
+   * deterministically on their first scheduled activation.
+   */
+  scheduler?: import("./scheduler.js").WorldSchedulerState;
 }
 
 // ─── Helpers de lecture (ne mutent jamais le monde) ─────────────────────────────
