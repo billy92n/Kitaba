@@ -54,7 +54,8 @@ export type PrepareAutonomousTurnResult =
       code:
         | AutonomousContextFailureCode
         | "NO_ELIGIBLE_ACTION"
-        | "DUPLICATE_CANDIDATE_KEY";
+        | "DUPLICATE_CANDIDATE_KEY"
+        | "UNBOUND_TARGETED_CANDIDATE";
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
     };
@@ -84,6 +85,7 @@ export type AutonomousTurnResult =
         | AutonomousContextFailureCode
         | "NO_ELIGIBLE_ACTION"
         | "DUPLICATE_CANDIDATE_KEY"
+        | "UNBOUND_TARGETED_CANDIDATE"
         | "SESSION_VERSION_MISMATCH";
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
