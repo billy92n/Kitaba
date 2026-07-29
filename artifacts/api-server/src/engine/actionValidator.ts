@@ -68,7 +68,7 @@ function fail(
 function ambiguous(actor: Entity, candidateIds: string[]): ActionFailure {
   return fail(
     "TARGET_AMBIGUOUS",
-    "La cible demandÃ©e est ambiguÃ«.",
+    "La cible demandée est ambiguë.",
     actor,
     candidateIds,
   );
@@ -98,7 +98,7 @@ export function validateAction(
       if (target.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
-          `Vous ne savez pas comment aller Ã  "${action.targetName ?? "?"}".`,
+          `Vous ne savez pas comment aller à "${action.targetName ?? "?"}".`,
           actor,
         );
       }
@@ -108,7 +108,7 @@ export function validateAction(
       if (target.target.id === actor.locationId) {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `Vous Ãªtes dÃ©jÃ  Ã  ${target.target.name}.`,
+          `Vous êtes déjà à ${target.target.name}.`,
           actor,
         );
       }
@@ -126,7 +126,7 @@ export function validateAction(
     }
     case "speak": {
       if (!action.targetName) {
-        return fail("TARGET_NOT_FOUND", "Ã€ qui voulez-vous parler ?", actor);
+        return fail("TARGET_NOT_FOUND", "À qui voulez-vous parler ?", actor);
       }
       const target = findEntityAtLocation(
         state,
@@ -167,7 +167,7 @@ export function validateAction(
       if (resolved.target.availability === "ACTOR_INVENTORY") {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `Vous avez dÃ©jÃ  ${resolved.target.object.name} dans vos affaires.`,
+          `Vous avez déjà ${resolved.target.object.name} dans vos affaires.`,
           actor,
         );
       }
@@ -244,13 +244,13 @@ export function validateAction(
     case "use":
       return fail(
         "ACTION_NOT_IMPLEMENTED",
-        `L'action ${action.actionType} n'est pas encore implÃ©mentÃ©e.`,
+        `L'action ${action.actionType} n'est pas encore implémentée.`,
         actor,
       );
     case "attack":
       return fail(
         "ACTION_NOT_ALLOWED",
-        "La violence n'est pas implÃ©mentÃ©e dans cette version du monde.",
+        "La violence n'est pas implémentée dans cette version du monde.",
         actor,
       );
     case "unknown":
