@@ -1,5 +1,5 @@
-// domain/world.ts â€” Types du monde et Ã©tat actif. Aucun Ã©tat global en mÃ©moire.
-// Le LLM ne reÃ§oit jamais WorldState directement.
+// domain/world.ts — Types du monde et état actif. Aucun état global en mémoire.
+// Le LLM ne reçoit jamais WorldState directement.
 
 export type LocationId = string;
 export type EntityId = string;
@@ -7,14 +7,14 @@ export type ObjectId = string;
 
 export interface WorldTime {
   year: number;
-  season: "printemps" | "Ã©tÃ©" | "automne" | "hiver";
+  season: "printemps" | "été" | "automne" | "hiver";
   day: number;
   /**
-   * Heure entiÃ¨re. Les anciennes sauvegardes peuvent contenir une fraction :
+   * Heure entière. Les anciennes sauvegardes peuvent contenir une fraction :
    * normalizeWorldTime la convertit sans perte vers minute.
    */
   hour: number;
-  /** Minute entiÃ¨re dans l'heure. Absente dans les sauvegardes historiques. */
+  /** Minute entière dans l'heure. Absente dans les sauvegardes historiques. */
   minute?: number;
 }
 
@@ -36,9 +36,9 @@ export interface WorldObject {
   properties: Record<string, unknown>;
 }
 
-// WorldState â€” instantanÃ© complet du monde Ã  un instant donnÃ©.
-// Chaque action rÃ©ussie incrÃ©mente worldVersion.
-// controlledEntityId dÃ©signe le personnage jouÃ© â€” c'est une entitÃ© ordinaire.
+// WorldState — instantané complet du monde à un instant donné.
+// Chaque action réussie incrémente worldVersion.
+// controlledEntityId désigne le personnage joué — c'est une entité ordinaire.
 export interface WorldState {
   worldVersion: number;
   controlledEntityId: EntityId;
@@ -49,7 +49,7 @@ export interface WorldState {
   time: WorldTime;
 }
 
-// â”€â”€â”€ Helpers de lecture (ne mutent jamais le monde) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers de lecture (ne mutent jamais le monde) ─────────────────────────────
 
 export function getLocation(
   state: WorldState,
@@ -117,7 +117,7 @@ export function formatWorldDate(time: WorldTime): string {
     normalized.hour.toString().padStart(2, "0") +
     "h" +
     (normalized.minute ?? 0).toString().padStart(2, "0");
-  return `${dayName}, ${normalized.season} â€” An ${normalized.year}, ${hourStr}`;
+  return `${dayName}, ${normalized.season} — An ${normalized.year}, ${hourStr}`;
 }
 
 export function normalizeWorldTime(time: WorldTime): Required<WorldTime> {
@@ -133,4 +133,3 @@ export function normalizeWorldTime(time: WorldTime): Required<WorldTime> {
     minute: legacyTotalMinutes % 60,
   };
 }
-
