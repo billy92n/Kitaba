@@ -32,12 +32,19 @@ export interface AutonomyDecisionState {
   intentKey: string;
   /** Number of future decisions receiving the bounded inertia bonus. */
   remainingCommitmentTurns: number;
+  /** Origin of the last autonomous move, used to discourage an immediate return. */
+  previousLocationId?: string;
 }
 
 export interface AutonomousActionMetadata {
   intentKey: string;
   nextCommitmentTurns: number;
+  /** Canonical target previously admitted by the perceived affordance adapter. */
+  targetId?: string;
+  previousLocationId?: string;
 }
+
+export const MAX_COMMITMENT_TURNS = 10;
 
 export const DEFAULT_AUTONOMY_PROFILE: AutonomyProfile = {
   traits: {
@@ -155,12 +162,47 @@ export function resolveAutonomyDecisionState(
     typeof value.remainingCommitmentTurns !== "number" ||
     !Number.isInteger(value.remainingCommitmentTurns) ||
     value.remainingCommitmentTurns < 0 ||
-    value.remainingCommitmentTurns > 10
+    value.remainingCommitmentTurns > MAX_COMMITMENT_TURNS ||
+    (value.previousLocationId !== undefined &&
+      (typeof value.previousLocationId !== "string" ||
+        value.previousLocationId.length === 0))
   ) {
     throw new TypeError("autonomyDecisionState is invalid.");
   }
   return {
     intentKey: value.intentKey,
     remainingCommitmentTurns: value.remainingCommitmentTurns,
+    ...(value.previousLocationId === undefined
+      ? {}
+      : { previousLocationId: value.previousLocationId }),
+  };
+}
+
+export function resolveAutonomousActionMetadata(
+  value: unknown,
+): AutonomousActionMetadata {
+  if (
+    !isRecord(value) ||
+    typeof value.intentKey !== "string" ||
+    value.intentKey.length === 0 ||
+    typeof value.nextCommitmentTurns !== "number" ||
+    !Number.isInteger(value.nextCommitmentTurns) ||
+    value.nextCommitmentTurns < 0 ||
+    value.nextCommitmentTurns > MAX_COMMITMENT_TURNS ||
+    (value.targetId !== undefined &&
+      (typeof value.targetId !== "string" || value.targetId.length === 0)) ||
+    (value.previousLocationId !== undefined &&
+      (typeof value.previousLocationId !== "string" ||
+        value.previousLocationId.length === 0))
+  ) {
+    throw new TypeError("autonomous action metadata is invalid.");
+  }
+  return {
+    intentKey: value.intentKey,
+    nextCommitmentTurns: value.nextCommitmentTurns,
+    ...(value.targetId === undefined ? {} : { targetId: value.targetId }),
+    ...(value.previousLocationId === undefined
+      ? {}
+      : { previousLocationId: value.previousLocationId }),
   };
 }
