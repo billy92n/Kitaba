@@ -126,8 +126,11 @@ The world-facing adapter, not the decision kernel:
 1. catches up the explicit actor lazily;
 2. reads only the actor, its current location, connected locations, local
    entities/objects and its own inventory;
-3. creates structured action drafts from supported verbs;
-4. previews every draft with the existing `validateAction`;
+3. creates structured action drafts from supported verbs and binds every
+   perceived affordance to its canonical target ID;
+4. previews every draft with the existing `validateAction`; the ID-bound path
+   checks canonical location/ownership and never performs a second global
+   textual lookup;
 5. emits a filtered immutable decision input and candidate eligibility traces.
 
 The pure decision kernel never receives `WorldState`. It:
@@ -160,14 +163,34 @@ events and the autonomous commitment state. The service commits through
   Seed noise and normal inertia cannot defeat that tier.
 - Seed noise defaults to at most 1.2% of the scale.
 - Ties are resolved by the stable candidate key, never insertion order or locale.
+- Candidate keys are required to be unique; malformed duplicate input is refused
+  explicitly rather than inheriting stable-sort insertion order.
+
+The integer weights express a deliberately small hierarchy rather than learned
+probabilities:
+
+| Action  | Dominant signal | Supporting signals           | Rationale                                            |
+| ------- | --------------- | ---------------------------- | ---------------------------------------------------- |
+| eat     | hunger 7        | discipline 1, rest goal 2    | a physiological need dominates preference            |
+| sleep   | fatigue 7       | prudence 1, rest goal 2      | the same vital/preference split as eating            |
+| speak   | sociability 7   | social goal 3                | personality remains primary, a goal can reinforce it |
+| move    | curiosity 5     | ambition 2, explore goal 3   | exploration combines disposition and durable intent  |
+| examine | curiosity 7     | discipline 1, explore goal 2 | observation is chiefly curiosity-driven              |
+| take    | ambition 6      | curiosity 2, acquire goal 2  | acquisition is chiefly goal-directed agency          |
+
+All rows sum to ten, so their weighted averages remain directly comparable. These
+weights are versioned policy constants, not claims about human psychology.
 
 ## Anti-oscillation
 
 A successful autonomous action stores a small decision state on the acting entity:
-the intent key and a bounded number of remaining commitment turns. Re-selecting
-that intention receives a bounded bonus. A critical need bypasses the normal tier,
-so commitment cannot block a vital interruption. Failed actions do not update the
-commitment.
+the intent key, a bounded number of remaining commitment turns (maximum ten), and
+the origin of the last move. Re-selecting that intention receives a bounded bonus.
+An immediate return to the previous location receives the same bounded value as a
+penalty, preventing a close Aâ†”B choice from oscillating every turn. A critical need
+bypasses the normal tier, so commitment cannot block a vital interruption. Failed
+actions do not update the commitment. Configuration and persisted-state validators
+share the same maximum, so the kernel cannot emit an unreadable next state.
 
 ## Performance and levels of detail
 
