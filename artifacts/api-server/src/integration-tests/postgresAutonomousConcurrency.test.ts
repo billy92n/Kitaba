@@ -182,18 +182,17 @@ describe("PostgreSQL autonomous optimistic concurrency", () => {
       loadSession: async () => staleSnapshot,
       commitPort: postgresActionCommitPort,
     };
+    const schedulerConfig = {
+      seed: "postgres-scheduler",
+      budgetUnits: 8,
+      lodProfiles: {
+        LOD1: { cadenceMinutes: 60, budgetCost: 8 },
+      },
+    } as const;
 
     const results = await Promise.all([
-      runWorldSchedulerBatch(
-        sessionId,
-        { seed: "postgres-scheduler", budgetUnits: 8 },
-        dependencies,
-      ),
-      runWorldSchedulerBatch(
-        sessionId,
-        { seed: "postgres-scheduler", budgetUnits: 8 },
-        dependencies,
-      ),
+      runWorldSchedulerBatch(sessionId, schedulerConfig, dependencies),
+      runWorldSchedulerBatch(sessionId, schedulerConfig, dependencies),
     ]);
 
     expect(results.map((result) => result.status).sort()).toEqual([
