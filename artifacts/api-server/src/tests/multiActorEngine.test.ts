@@ -12,14 +12,14 @@ function action(
 }
 
 describe("moteur multi-acteur", () => {
-  it("préserve les actions du personnage contrôlé", () => {
+  it("prÃ©serve les actions du personnage contrÃ´lÃ©", () => {
     const state = createInitialWorldState("Yara");
     expect(
       resolveAction(state, "player", action("move", "taverne du loup")).success,
     ).toBe(true);
   });
 
-  it("permet à un PNJ de se déplacer", () => {
+  it("permet Ã  un PNJ de se dÃ©placer", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(
       state,
@@ -35,7 +35,7 @@ describe("moteur multi-acteur", () => {
     );
   });
 
-  it("permet à un PNJ de prendre un objet", () => {
+  it("permet Ã  un PNJ de prendre un objet", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(state, "hamid", action("take", "minerai"));
     expect(result.success).toBe(true);
@@ -47,7 +47,7 @@ describe("moteur multi-acteur", () => {
     );
   });
 
-  it("permet à un PNJ de manger un objet de son inventaire", () => {
+  it("permet Ã  un PNJ de manger un objet de son inventaire", () => {
     const state = createInitialWorldState("Yara");
     state.entities.tariq.hunger = 40;
     const result = resolveAction(state, "tariq", action("eat", "pain"));
@@ -57,9 +57,40 @@ describe("moteur multi-acteur", () => {
     );
     expect(result.newWorldState.entities.tariq.hunger).toBeGreaterThan(40);
     expect(result.newWorldState.entities.player.inventory).toEqual([]);
+    expect(result.newWorldState.objects.pain_taverne).toBeUndefined();
   });
 
-  it("applique le temps uniquement à l'acteur transmis", () => {
+  it.each([
+    [undefined, "OBJECT_NOT_EDIBLE"],
+    [false, "OBJECT_NOT_EDIBLE"],
+    ["oui", "OBJECT_NOT_EDIBLE"],
+  ])("refuse un objet possÃ©dÃ© dont edible vaut %j", (edible, failureCode) => {
+    const state = createInitialWorldState("Yara");
+    state.objects.pain_taverne = {
+      ...state.objects.pain_taverne,
+      properties: edible === undefined ? {} : { edible },
+    };
+    expect(resolveAction(state, "tariq", action("eat", "pain"))).toMatchObject({
+      success: false,
+      failureCode,
+      newWorldState: state,
+    });
+  });
+
+  it.each([
+    ["lanterne", "ACTION_NOT_ALLOWED"],
+    ["marteau", "ACTION_NOT_ALLOWED"],
+    ["objet absent", "TARGET_NOT_FOUND"],
+  ])("refuse de manger %s hors inventaire ou absent", (target, failureCode) => {
+    const state = createInitialWorldState("Yara");
+    expect(resolveAction(state, "tariq", action("eat", target))).toMatchObject({
+      success: false,
+      failureCode,
+      newWorldState: state,
+    });
+  });
+
+  it("applique le temps uniquement Ã  l'acteur transmis", () => {
     const state = createInitialWorldState("Yara");
     state.entities.hamid.hunger = 50;
     state.entities.hamid.fatigue = 50;
@@ -120,7 +151,7 @@ describe("moteur multi-acteur", () => {
     expect(result.event.description).toContain("lieu valide");
   });
 
-  it("est indépendant de controlledEntityId pour un actorId explicite", () => {
+  it("est indÃ©pendant de controlledEntityId pour un actorId explicite", () => {
     const first = createInitialWorldState("Yara");
     const second = structuredClone(first);
     second.controlledEntityId = "oumou";
@@ -142,3 +173,4 @@ describe("moteur multi-acteur", () => {
     expect(secondResult.actionOutcome).toEqual(firstResult.actionOutcome);
   });
 });
+
