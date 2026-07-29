@@ -59,4 +59,3 @@ describe("immutabilitÃ© du service", () => {
     expect(history).toEqual([previous]);
   });
 });
-
