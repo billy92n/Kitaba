@@ -61,6 +61,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * Autonomous semantic identities are accepted only in their canonical form.
+ * The runtime boundary rejects blank or peripherally padded values instead of
+ * silently changing the identity used for persistence and deterministic replay.
+ */
+export function isCanonicalAutonomyIdentity(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.length > 0 && value === value.trim()
+  );
+}
+
 function isPersistentGoalKind(value: unknown): value is PersistentGoalKind {
   return PERSISTENT_GOAL_KINDS.some((kind) => kind === value);
 }
@@ -157,15 +168,13 @@ export function resolveAutonomyDecisionState(
   if (value === undefined) return null;
   if (
     !isRecord(value) ||
-    typeof value.intentKey !== "string" ||
-    value.intentKey.length === 0 ||
+    !isCanonicalAutonomyIdentity(value.intentKey) ||
     typeof value.remainingCommitmentTurns !== "number" ||
     !Number.isInteger(value.remainingCommitmentTurns) ||
     value.remainingCommitmentTurns < 0 ||
     value.remainingCommitmentTurns > MAX_COMMITMENT_TURNS ||
     (value.previousLocationId !== undefined &&
-      (typeof value.previousLocationId !== "string" ||
-        value.previousLocationId.length === 0))
+      !isCanonicalAutonomyIdentity(value.previousLocationId))
   ) {
     throw new TypeError("autonomyDecisionState is invalid.");
   }
@@ -183,18 +192,15 @@ export function resolveAutonomousActionMetadata(
 ): AutonomousActionMetadata {
   if (
     !isRecord(value) ||
-    typeof value.intentKey !== "string" ||
-    value.intentKey.length === 0 ||
+    !isCanonicalAutonomyIdentity(value.intentKey) ||
     typeof value.nextCommitmentTurns !== "number" ||
     !Number.isInteger(value.nextCommitmentTurns) ||
     value.nextCommitmentTurns < 0 ||
     value.nextCommitmentTurns > MAX_COMMITMENT_TURNS ||
     (value.targetId !== undefined &&
-      (typeof value.targetId !== "string" ||
-        value.targetId.trim().length === 0)) ||
+      !isCanonicalAutonomyIdentity(value.targetId)) ||
     (value.previousLocationId !== undefined &&
-      (typeof value.previousLocationId !== "string" ||
-        value.previousLocationId.length === 0))
+      !isCanonicalAutonomyIdentity(value.previousLocationId))
   ) {
     throw new TypeError("autonomous action metadata is invalid.");
   }
