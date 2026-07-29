@@ -623,7 +623,68 @@ describe("candidate credibility and utility", () => {
     };
 
     for (let seed = 0; seed < 30; seed += 1) {
-  …551 tokens truncated…     ),
+      expect(selectedKey(state, "tariq", seed)).toBe("eat:pain_taverne");
+    }
+  });
+
+  it("lets extreme fatigue select sleep as a critical action", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.player = {
+      ...state.entities.player,
+      hunger: 100,
+      fatigue: 0,
+      autonomyProfile: profile(
+        { curiosity: 100, prudence: 0 },
+        { kind: "EXPLORE", strength: 100 },
+      ),
+    };
+    expect(selectedKey(state, "player", "exhausted")).toBe("sleep:self");
+  });
+
+  it("does not force a satiated actor to eat", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.tariq = {
+      ...state.entities.tariq,
+      hunger: 100,
+      fatigue: 100,
+      autonomyProfile: profile(
+        { sociability: 100, discipline: 0 },
+        { kind: "SOCIALIZE", strength: 100 },
+      ),
+    };
+    expect(selectedKey(state, "tariq", "social")).toBe("speak:leila");
+  });
+
+  it("allows curiosity to influence an appropriate non-vital choice", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.player = {
+      ...state.entities.player,
+      hunger: 100,
+      fatigue: 100,
+      autonomyProfile: profile(
+        { curiosity: 100, sociability: 0, ambition: 0 },
+        { kind: "EXPLORE", strength: 100 },
+      ),
+    };
+    expect(selectedKey(state, "player", "curious")).toMatch(/^(move|examine):/);
+  });
+
+  it("keeps same-named visible targets bound to their exact ids", () => {
+    const state = createInitialWorldState("Yara");
+    state.objects.lantern_duplicate = {
+      ...state.objects.lanterne_taverne,
+      id: "lantern_duplicate",
+    };
+    state.locations.taverne_du_loup.presentObjects.push("lantern_duplicate");
+    const decision = decideAutonomousAction(inputFor(state, "tariq"), {
+      seed: "ambiguous",
+    });
+    expect(decision.success).toBe(true);
+    expect(
+      decision.trace.candidates.filter((candidate) =>
+        ["lantern_duplicate", "lanterne_taverne"].some((id) =>
+          candidate.candidateKey.endsWith(id),
+        ),
       ),
     ).toHaveLength(4);
     expect(
