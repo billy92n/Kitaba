@@ -1,4 +1,7 @@
-import type { StructuredAction } from "../domain/actions.js";
+import {
+  actionRequiresCanonicalTarget,
+  type StructuredAction,
+} from "../domain/actions.js";
 import {
   MAX_COMMITMENT_TURNS,
   type PersistentGoalKind,
@@ -53,7 +56,10 @@ export type AutonomousDecisionResult =
     }
   | {
       success: false;
-      code: "NO_ELIGIBLE_ACTION" | "DUPLICATE_CANDIDATE_KEY";
+      code:
+        | "NO_ELIGIBLE_ACTION"
+        | "DUPLICATE_CANDIDATE_KEY"
+        | "UNBOUND_TARGETED_CANDIDATE";
       trace: AutonomousDecisionTrace;
     };
 
@@ -304,6 +310,25 @@ export function decideAutonomousAction(
         reason: `Duplicate candidate keys: ${[...new Set(duplicateKeys)].join(
           ", ",
         )}.`,
+      },
+    };
+  }
+  const unboundTargetedCandidate = orderedCandidates.find(
+    (candidate) =>
+      actionRequiresCanonicalTarget(candidate.action.actionType) &&
+      candidate.targetId === undefined,
+  );
+  if (unboundTargetedCandidate) {
+    return {
+      success: false,
+      code: "UNBOUND_TARGETED_CANDIDATE",
+      trace: {
+        actorId: input.actor.actorId,
+        seed,
+        candidates: [],
+        selectedCandidateKey: null,
+        tieBreak: "Targeted candidates require a canonical target.",
+        reason: `Candidate ${unboundTargetedCandidate.candidateKey} has no canonical target.`,
       },
     };
   }
