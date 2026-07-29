@@ -1,6 +1,6 @@
-// services/gameService.ts — Orchestre le traitement complet d'une action.
-// Séquence : interprétation LLM → résolution moteur → persistance atomique → narration.
-// La transaction PostgreSQL garantit l'atomicité de chaque action.
+// services/gameService.ts â€” Orchestre le traitement complet d'une action.
+// SÃ©quence : interprÃ©tation LLM â†’ rÃ©solution moteur â†’ persistance atomique â†’ narration.
+// La transaction PostgreSQL garantit l'atomicitÃ© de chaque action.
 
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
@@ -27,8 +27,9 @@ import { createInitialWorldState } from "../worldSeed.js";
 import { formatWorldDate, getControlledEntity } from "../domain/world.js";
 import type { NarrativeEntry, CharacterStatus } from "../persistence/types.js";
 import type { WorldState } from "../domain/world.js";
+import type { GameEvent } from "../domain/events.js";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function buildCharacterStatus(state: WorldState): CharacterStatus {
   const entity = getControlledEntity(state);
@@ -43,7 +44,21 @@ function buildCharacterStatus(state: WorldState): CharacterStatus {
   };
 }
 
-// ─── Nouvelle partie ──────────────────────────────────────────────────────────
+export function bindEventToSession(
+  event: GameEvent,
+  sessionId: string,
+): GameEvent {
+  return { ...event, sessionId };
+}
+
+export function appendNarrativeEntry(
+  history: readonly NarrativeEntry[],
+  entry: NarrativeEntry,
+): NarrativeEntry[] {
+  return [...history, entry];
+}
+
+// â”€â”€â”€ Nouvelle partie â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function startNewGame(playerName: string): Promise<{
   sessionId: string;
@@ -74,7 +89,7 @@ export async function startNewGame(playerName: string): Promise<{
   };
 }
 
-// ─── Traitement d'une action ──────────────────────────────────────────────────
+// â”€â”€â”€ Traitement d'une action â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function processPlayerAction(
   sessionId: string,
@@ -84,21 +99,21 @@ export async function processPlayerAction(
   characterStatus: CharacterStatus;
   worldVersion: number;
 } | null> {
-  // Charge l'état — la vérité du monde est toujours en base
+  // Charge l'Ã©tat â€” la vÃ©ritÃ© du monde est toujours en base
   const session = await loadSession(sessionId);
   if (!session) return null;
 
   const { worldState, narrativeHistory } = session;
 
-  // 1. Interprétation (faux LLM) — ne reçoit que le texte brut
+  // 1. InterprÃ©tation (faux LLM) â€” ne reÃ§oit que le texte brut
   const action = interpretPlayerAction(playerInput.trim());
 
-  // 2. Résolution moteur — ne touche pas au langage naturel
+  // 2. RÃ©solution moteur â€” ne touche pas au langage naturel
   const actorId = worldState.controlledEntityId;
   const resolved = resolveAction(worldState, actorId, action);
-  resolved.event.sessionId = sessionId;
+  const event = bindEventToSession(resolved.event, sessionId);
 
-  // 3. Construction des faits perceptibles — filtre l'état du monde
+  // 3. Construction des faits perceptibles â€” filtre l'Ã©tat du monde
   const perception = buildPerceptibleFacts(
     resolved.newWorldState,
     actorId,
@@ -106,7 +121,7 @@ export async function processPlayerAction(
   );
   if (!perception.success) return null;
 
-  // 4. Narration — ne reçoit que les faits perceptibles
+  // 4. Narration â€” ne reÃ§oit que les faits perceptibles
   const narrationText = narrateFromPerception(perception.facts);
 
   const narrativeEntry: NarrativeEntry = {
@@ -115,20 +130,22 @@ export async function processPlayerAction(
     text: narrationText,
     timestamp: new Date().toISOString(),
   };
-  narrativeHistory.push(narrativeEntry);
+  const updatedNarrativeHistory = appendNarrativeEntry(
+    narrativeHistory,
+    narrativeEntry,
+  );
 
   const newWorldState = resolved.newWorldState;
-  const event = resolved.event;
 
   // 5. Persistance atomique dans une transaction PostgreSQL
   await db.transaction(async (tx) => {
-    // Met à jour la session
+    // Met Ã  jour la session
     await tx
       .update(kitabaSessionsTable)
       .set({
         worldVersion: newWorldState.worldVersion,
         worldState: newWorldState as unknown as Record<string, unknown>,
-        narrativeHistory: narrativeHistory as unknown as Record<
+        narrativeHistory: updatedNarrativeHistory as unknown as Record<
           string,
           unknown
         >[],
@@ -136,7 +153,7 @@ export async function processPlayerAction(
       })
       .where(eq(kitabaSessionsTable.id, sessionId));
 
-    // Persiste l'événement dans le journal immuable
+    // Persiste l'Ã©vÃ©nement dans le journal immuable
     await tx.insert(kitabaEventsTable).values({
       id: event.id,
       sessionId,
@@ -150,7 +167,9 @@ export async function processPlayerAction(
       occurredAt: event.occurredAt as unknown as Record<string, unknown>,
     });
 
-    // Auto-save après chaque action (réussie ou non — pour permettre le rewind)
+    // Une tentative refusÃ©e reste Ã  la mÃªme worldVersion, mais son UUID de
+    // sauvegarde et son entrÃ©e narrative sont uniques : elle demeure auditable
+    // sans prÃ©tendre reprÃ©senter une nouvelle version du monde.
     const autoSaveName = `auto-v${newWorldState.worldVersion}`;
     await tx.insert(kitabaSavesTable).values({
       id: randomUUID(),
@@ -161,7 +180,7 @@ export async function processPlayerAction(
       controlledEntityId: newWorldState.controlledEntityId,
       worldVersion: newWorldState.worldVersion,
       worldState: newWorldState as unknown as Record<string, unknown>,
-      narrativeHistory: narrativeHistory as unknown as Record<
+      narrativeHistory: updatedNarrativeHistory as unknown as Record<
         string,
         unknown
       >[],
@@ -178,7 +197,7 @@ export async function processPlayerAction(
   };
 }
 
-// ─── Sauvegarde manuelle ──────────────────────────────────────────────────────
+// â”€â”€â”€ Sauvegarde manuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function saveGame(
   sessionId: string,
@@ -215,7 +234,7 @@ export async function saveGame(
   };
 }
 
-// ─── Chargement d'une sauvegarde — crée une nouvelle branche ─────────────────
+// â”€â”€â”€ Chargement d'une sauvegarde â€” crÃ©e une nouvelle branche â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function loadSavedGame(saveId: string): Promise<{
   sessionId: string;
@@ -225,7 +244,7 @@ export async function loadSavedGame(saveId: string): Promise<{
   const save = await loadSave(saveId);
   if (!save) return null;
 
-  // Crée une nouvelle session — l'ancienne reste intacte (branchement)
+  // CrÃ©e une nouvelle session â€” l'ancienne reste intacte (branchement)
   const newSessionId = await createSession(
     save.controlledEntityId,
     save.worldState,
@@ -239,7 +258,7 @@ export async function loadSavedGame(saveId: string): Promise<{
   };
 }
 
-// ─── Liste des sauvegardes manuelles ─────────────────────────────────────────
+// â”€â”€â”€ Liste des sauvegardes manuelles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getManualSaves() {
   const saves = await listManualSaves();
@@ -251,3 +270,4 @@ export async function getManualSaves() {
     savedAt: s.savedAt,
   }));
 }
+
