@@ -38,7 +38,7 @@ const characterStatus = {
 const narrativeEntry = {
   id: "entry-1",
   type: "narrator" as const,
-  text: "Le passage est bloquÃ©.",
+  text: "Le passage est bloqué.",
   timestamp: "2026-07-28T20:00:00.000Z",
 };
 
@@ -79,7 +79,7 @@ beforeEach(() => {
 });
 
 describe("contrats HTTP du jeu", () => {
-  it("retourne une session conforme lors de la crÃ©ation", async () => {
+  it("retourne une session conforme lors de la création", async () => {
     service.startNewGame.mockResolvedValue({
       sessionId: "session-1",
       characterStatus,
@@ -95,7 +95,7 @@ describe("contrats HTTP du jeu", () => {
     expect(NewGameResponse.parse(response.body)).toEqual(response.body);
   });
 
-  it("retourne worldVersion pour une action rÃ©ussie", async () => {
+  it("retourne worldVersion pour une action réussie", async () => {
     service.processPlayerAction.mockResolvedValue({
       narrativeEntry,
       characterStatus,
@@ -114,7 +114,7 @@ describe("contrats HTTP du jeu", () => {
     ).toBeTypeOf("number");
   });
 
-  it("conserve le mÃªme contrat pour une action refusÃ©e", async () => {
+  it("conserve le même contrat pour une action refusée", async () => {
     service.processPlayerAction.mockResolvedValue({
       narrativeEntry,
       characterStatus,
@@ -134,13 +134,13 @@ describe("contrats HTTP du jeu", () => {
     expect(
       (response.body as { narrativeEntry: { text: string } }).narrativeEntry
         .text,
-    ).toContain("bloquÃ©");
+    ).toContain("bloqué");
   });
 
-  it("retourne les mÃ©tadonnÃ©es stables d'une sauvegarde manuelle", async () => {
+  it("retourne les métadonnées stables d'une sauvegarde manuelle", async () => {
     service.saveGame.mockResolvedValue({
       saveId: "save-1",
-      saveName: "Avant le marchÃ©",
+      saveName: "Avant le marché",
       savedAt: "2026-07-28T20:30:00.000Z",
     });
 
@@ -148,7 +148,7 @@ describe("contrats HTTP du jeu", () => {
       method: "POST",
       body: JSON.stringify({
         sessionId: "session-1",
-        saveName: "Avant le marchÃ©",
+        saveName: "Avant le marché",
       }),
     });
 
@@ -161,7 +161,7 @@ describe("contrats HTTP du jeu", () => {
     service.getManualSaves.mockResolvedValue([
       {
         saveId: "save-1",
-        saveName: "Avant le marchÃ©",
+        saveName: "Avant le marché",
         characterName: "Yara",
         savedAt: "2026-07-28T20:30:00.000Z",
         worldVersion: 7,
@@ -186,7 +186,7 @@ describe("contrats HTTP du jeu", () => {
 
     expect(response).toEqual({
       status: 400,
-      body: { error: "Corps de requÃªte invalide." },
+      body: { error: "Corps de requête invalide." },
     });
     expect(service.processPlayerAction).not.toHaveBeenCalled();
   });
