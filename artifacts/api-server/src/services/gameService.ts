@@ -144,11 +144,8 @@ export async function processPlayerAction(
       .update(kitabaSessionsTable)
       .set({
         worldVersion: newWorldState.worldVersion,
-        worldState: newWorldState as unknown as Record<string, unknown>,
-        narrativeHistory: updatedNarrativeHistory as unknown as Record<
-          string,
-          unknown
-        >[],
+        worldState: newWorldState,
+        narrativeHistory: updatedNarrativeHistory,
         updatedAt: new Date(),
       })
       .where(eq(kitabaSessionsTable.id, sessionId));
@@ -163,8 +160,8 @@ export async function processPlayerAction(
       locationId: event.locationId,
       targetId: event.targetId ?? null,
       description: event.description,
-      consequences: event.consequences as unknown as Record<string, unknown>,
-      occurredAt: event.occurredAt as unknown as Record<string, unknown>,
+      consequences: event.consequences,
+      occurredAt: event.occurredAt,
     });
 
     // Une tentative refusÃ©e reste Ã  la mÃªme worldVersion, mais son UUID de
@@ -179,11 +176,8 @@ export async function processPlayerAction(
       saveName: autoSaveName,
       controlledEntityId: newWorldState.controlledEntityId,
       worldVersion: newWorldState.worldVersion,
-      worldState: newWorldState as unknown as Record<string, unknown>,
-      narrativeHistory: updatedNarrativeHistory as unknown as Record<
-        string,
-        unknown
-      >[],
+      worldState: newWorldState,
+      narrativeHistory: updatedNarrativeHistory,
     });
   });
 
@@ -220,11 +214,8 @@ export async function saveGame(
     saveName,
     controlledEntityId: session.controlledEntityId,
     worldVersion: session.worldState.worldVersion,
-    worldState: session.worldState as unknown as Record<string, unknown>,
-    narrativeHistory: session.narrativeHistory as unknown as Record<
-      string,
-      unknown
-    >[],
+    worldState: session.worldState,
+    narrativeHistory: session.narrativeHistory,
     savedAt,
   });
   return {
