@@ -347,6 +347,17 @@ describe("contrats du moteur", () => {
           locationId: null,
         };
       }
+      if (actionType === "eat" && targetName === "marteau") {
+        state.entities.hamid = {
+          ...state.entities.hamid,
+          inventory: ["marteau_hamid"],
+        };
+        state.objects.marteau_hamid = {
+          ...state.objects.marteau_hamid,
+          ownerId: "hamid",
+          locationId: null,
+        };
+      }
       const result = resolveAction(
         state,
         "hamid",
