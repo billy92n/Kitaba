@@ -102,4 +102,3 @@ describe("knowledgeIsolation", () => {
     expect(entityNames).not.toContain("Tariq");
   });
 });
-
