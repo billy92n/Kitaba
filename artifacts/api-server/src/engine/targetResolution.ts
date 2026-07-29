@@ -31,7 +31,7 @@ export function normalizeTarget(value: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[â€™']/g, " ")
+    .replace(/[’']/g, " ")
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -78,7 +78,7 @@ export function findLocationByQuery(
 ): TargetResolution<WorldLocation> {
   if (query === null) return { status: "MISSING" };
   const stripped = query.replace(
-    /^(la|le|les|l['â€™]|du|de la|de l['â€™]|au|aux|un|une)\s*/i,
+    /^(la|le|les|l['’]|du|de la|de l['’]|au|aux|un|une)\s*/i,
     "",
   );
   const normalized = normalizedQuery(stripped.length > 0 ? stripped : query);
@@ -118,8 +118,8 @@ function resolveObjectGroup(
 }
 
 /**
- * PrioritÃ© mÃ©tier historique : inventaire de l'acteur, sol, inventaire tiers.
- * Une ambiguÃ¯tÃ© au meilleur niveau de prioritÃ© est refusÃ©e.
+ * Priorité métier historique : inventaire de l'acteur, sol, inventaire tiers.
+ * Une ambiguïté au meilleur niveau de priorité est refusée.
  */
 export function resolveObjectInActorContext(
   state: WorldState,
