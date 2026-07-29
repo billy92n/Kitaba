@@ -342,12 +342,20 @@ describe("candidate credibility and utility", () => {
         "tariq",
         {
           actionType: "examine",
-          targetName: "missing",
+          targetName: null,
           details: "",
           rawInput: "",
         },
         "missing",
       ),
+    ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
+    expect(
+      validateAction(state, "tariq", {
+        actionType: "examine",
+        targetName: "missing",
+        details: "",
+        rawInput: "",
+      }),
     ).toMatchObject({ possible: true, context: { target: null } });
 
     for (const targetId of [
@@ -382,7 +390,7 @@ describe("candidate credibility and utility", () => {
           },
           targetId,
         ),
-      ).toMatchObject({ possible: true, context: { target: null } });
+      ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
     }
   });
 
@@ -524,6 +532,40 @@ describe("candidate credibility and utility", () => {
     });
   });
 
+  it("refuses an id-bound examination whose target disappeared", () => {
+    const initial = createInitialWorldState("Yara");
+    const input = inputFor(initial, "player");
+    const inspectableObject = input.candidates.find(
+      (candidate) =>
+        candidate.action.actionType === "examine" &&
+        candidate.targetId !== undefined &&
+        initial.objects[candidate.targetId] !== undefined,
+    );
+    expect(inspectableObject).toBeDefined();
+    if (!inspectableObject?.targetId) return;
+    const decision = decideAutonomousAction(
+      { ...input, candidates: [inspectableObject] },
+      { seed: "stale-examine" },
+    );
+    expect(decision.success).toBe(true);
+    if (!decision.success) return;
+
+    const changed = structuredClone(initial);
+    delete changed.objects[inspectableObject.targetId];
+    const before = structuredClone(changed);
+    const resolved = resolveAction(changed, "player", decision.action, {
+      createEventId: () => "stale-examine",
+    });
+    expect(resolved).toMatchObject({
+      success: false,
+      failureCode: "TARGET_NOT_FOUND",
+      newWorldState: changed,
+    });
+    expect(resolved.newWorldState.time).toEqual(before.time);
+    expect(resolved.newWorldState.worldVersion).toBe(before.worldVersion);
+    expect(changed).toEqual(before);
+  });
+
   it("never persists malformed autonomous metadata", () => {
     const state = createInitialWorldState("Yara");
     expect(
@@ -543,6 +585,31 @@ describe("candidate credibility and utility", () => {
           },
         },
         { createEventId: () => "invalid-autonomy" },
+      ),
+    ).toMatchObject({
+      success: false,
+      failureCode: "INVALID_AUTONOMY_METADATA",
+      newWorldState: state,
+    });
+  });
+
+  it("refuses a targeted autonomous action without a canonical target", () => {
+    const state = createInitialWorldState("Yara");
+    expect(
+      resolveAction(
+        state,
+        "player",
+        {
+          actionType: "move",
+          targetName: "ferme",
+          details: "",
+          rawInput: "",
+          autonomy: {
+            intentKey: "move:ferme_oumou",
+            nextCommitmentTurns: 2,
+          },
+        },
+        { createEventId: () => "unbound-target" },
       ),
     ).toMatchObject({
       success: false,
@@ -626,6 +693,35 @@ describe("controlled determinism and anti-oscillation", () => {
     expect(result).toMatchObject({
       success: false,
       code: "DUPLICATE_CANDIDATE_KEY",
+      trace: { selectedCandidateKey: null },
+    });
+  });
+
+  it("rejects an unbound targeted candidate with a typed failure", () => {
+    const input = inputFor(createInitialWorldState("Yara"), "player");
+    expect(
+      decideAutonomousAction(
+        {
+          ...input,
+          candidates: [
+            {
+              candidateKey: "move:unbound",
+              action: {
+                actionType: "move",
+                targetName: "somewhere",
+                details: "",
+                rawInput: "",
+              },
+              source: "CONNECTED_LOCATION",
+              eligibility: { eligible: true },
+            },
+          ],
+        },
+        { seed: "unbound" },
+      ),
+    ).toMatchObject({
+      success: false,
+      code: "UNBOUND_TARGETED_CANDIDATE",
       trace: { selectedCandidateKey: null },
     });
   });
