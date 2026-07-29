@@ -15,7 +15,7 @@ const { appendNarrativeEntry, bindEventToSession } =
 
 describe("immutabilité du service", () => {
   it("associe la session à une copie de l'événement moteur", () => {
-    const event: GameEvent = Object.freeze({
+    const event: GameEvent = {
       id: "event-1",
       sessionId: "",
       worldVersion: 0,
@@ -32,7 +32,8 @@ describe("immutabilité du service", () => {
         hour: 9,
         minute: 0,
       },
-    });
+    };
+    Object.freeze(event);
     const persisted = bindEventToSession(event, "session-1");
     expect(persisted).not.toBe(event);
     expect(persisted.sessionId).toBe("session-1");
