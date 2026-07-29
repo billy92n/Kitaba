@@ -1,4 +1,7 @@
-import type { StructuredAction } from "../domain/actions.js";
+import {
+  actionRequiresCanonicalTarget,
+  type StructuredAction,
+} from "../domain/actions.js";
 import { resolveAutonomousActionMetadata } from "../domain/autonomy.js";
 import type { Entity } from "../domain/entities.js";
 import type {
@@ -177,6 +180,16 @@ export function validateAction(
         actor,
       );
     }
+    if (
+      actionRequiresCanonicalTarget(action.actionType) &&
+      action.autonomy.targetId === undefined
+    ) {
+      return fail(
+        "INVALID_AUTONOMY_METADATA",
+        "A targeted autonomous action requires a canonical target.",
+        actor,
+      );
+    }
   }
 
   switch (action.actionType) {
@@ -299,6 +312,13 @@ export function validateAction(
         : findInspectable(state, actorId, action.targetName);
       if (target.status === "AMBIGUOUS") {
         return ambiguous(actor, target.candidateIds);
+      }
+      if (resolvedTargetId !== undefined && target.status === "MISSING") {
+        return fail(
+          "TARGET_NOT_FOUND",
+          `La cible inspectable "${action.targetName ?? resolvedTargetId}" n'est plus accessible.`,
+          actor,
+        );
       }
       return {
         possible: true,
