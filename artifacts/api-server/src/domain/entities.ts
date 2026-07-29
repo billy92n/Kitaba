@@ -31,4 +31,4 @@ export interface Entity {
    */
   lastSimulationTime?: WorldTime;
 }
-
+

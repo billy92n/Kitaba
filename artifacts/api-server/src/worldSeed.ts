@@ -255,4 +255,4 @@ export function createInitialWorldState(playerName: string): WorldState {
     time: initialTime,
   };
 }
-
+

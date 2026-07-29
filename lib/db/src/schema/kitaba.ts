@@ -71,4 +71,4 @@ export type KitabaEvent = typeof kitabaEventsTable.$inferSelect;
 export type InsertKitabaEvent = z.infer<typeof insertKitabaEventSchema>;
 export type KitabaSave = typeof kitabaSavesTable.$inferSelect;
 export type InsertKitabaSave = z.infer<typeof insertKitabaSaveSchema>;
-
+

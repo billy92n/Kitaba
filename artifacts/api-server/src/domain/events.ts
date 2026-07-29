@@ -75,4 +75,4 @@ export function deserializeEventDetails(
  * - le statut discriminant et les règles d'observation vivent dans l'enveloppe
  *   JSONB afin que les anciennes lignes `string[]` restent lisibles.
  */
-
+

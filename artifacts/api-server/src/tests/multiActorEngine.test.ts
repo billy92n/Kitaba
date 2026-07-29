@@ -185,4 +185,4 @@ describe("moteur multi-acteur", () => {
     );
   });
 });
-
+

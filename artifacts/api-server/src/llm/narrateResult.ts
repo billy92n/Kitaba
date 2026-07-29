@@ -187,4 +187,4 @@ export function generateIntroText(state: WorldState): string {
   const time = formatWorldDate(state.time);
   return `${time}. Vous êtes ${controlledEntity.name}, ${controlledEntity.occupation} de votre état, fraîchement arrivé au village de Salma. ${loc?.description ?? ""} La journée commence.`;
 }
-
+

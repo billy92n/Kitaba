@@ -30,4 +30,4 @@ export interface PerceptibleFacts {
   entityStats: { hunger: number; fatigue: number; health: number } | null;
   actionOutcome: ActionOutcome | null;
 }
-
+
