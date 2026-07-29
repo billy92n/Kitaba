@@ -173,4 +173,3 @@ describe("moteur multi-acteur", () => {
     expect(secondResult.actionOutcome).toEqual(firstResult.actionOutcome);
   });
 });
-
