@@ -22,7 +22,10 @@ describe("normalisation des cibles", () => {
   it("couvre requête nulle, article seul et correspondance d'identifiant", () => {
     const state = createInitialWorldState("Yara");
     expect(findLocationByQuery(state, null)).toEqual({ status: "MISSING" });
-    expect(findLocationByQuery(state, "la")).toEqual({ status: "MISSING" });
+    expect(findLocationByQuery(state, "la")).toMatchObject({
+      status: "FOUND",
+      target: { id: "place_centrale" },
+    });
     state.locations.hidden_needle = {
       ...state.locations.place_centrale,
       id: "hidden_needle",
