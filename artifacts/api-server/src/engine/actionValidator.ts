@@ -1,129 +1,263 @@
-// engine/actionValidator.ts — Vérifie si une action structurée est possible dans le monde actuel.
-// Ne modifie jamais le monde. Retourne un résultat de validation avec raison en cas d'échec.
-
-import type { WorldState } from "../domain/world.js";
 import type { StructuredAction } from "../domain/actions.js";
-import { getControlledEntity, getEntitiesAt, getObjectsAt } from "../domain/world.js";
+import type { Entity } from "../domain/entities.js";
+import type {
+  EntityId,
+  WorldLocation,
+  WorldObject,
+  WorldState,
+} from "../domain/world.js";
+import {
+  findEntityAtLocation,
+  findInspectable,
+  findLocationByQuery,
+  resolveObjectInActorContext,
+  type ObjectAvailability,
+  type ResolvedInspectable,
+} from "./targetResolution.js";
 
-export interface ValidationResult {
-  possible: boolean;
-  reason: string | null; // non-null si !possible
+export type ActionFailureCode =
+  | "ACTOR_NOT_FOUND"
+  | "ACTOR_LOCATION_NOT_FOUND"
+  | "TARGET_NOT_FOUND"
+  | "TARGET_AMBIGUOUS"
+  | "OBJECT_NOT_EDIBLE"
+  | "ACTION_NOT_IMPLEMENTED"
+  | "ACTION_NOT_ALLOWED";
+
+export interface ActionFailure {
+  possible: false;
+  code: ActionFailureCode;
+  reason: string;
+  actor: Entity | null;
+  candidateIds?: string[];
 }
 
-const OK: ValidationResult = { possible: true, reason: null };
-const fail = (reason: string): ValidationResult => ({ possible: false, reason });
-
-function normalize(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, "").trim();
+interface BaseContext {
+  actor: Entity;
+  location: WorldLocation;
+  action: StructuredAction;
 }
 
-function findLocationByQuery(state: WorldState, query: string | null) {
-  if (!query) return null;
-  const stripped = query.replace(/^(la|le|les|l'|l'|du|au|aux|un|une)\s+/i, "").trim();
-  const q = normalize(stripped || query);
-  for (const loc of Object.values(state.locations)) {
-    const n = normalize(loc.name);
-    if (n.includes(q) || q.includes(normalize(loc.id)) || n.split(" ").some((w) => w.length > 3 && q.includes(w))) {
-      return loc;
-    }
-  }
-  return null;
+export type ValidatedActionContext =
+  | (BaseContext & { kind: "MOVE"; target: WorldLocation })
+  | (BaseContext & { kind: "SPEAK"; target: Entity })
+  | (BaseContext & {
+      kind: "TAKE" | "EAT";
+      target: WorldObject;
+      availability: ObjectAvailability;
+    })
+  | (BaseContext & { kind: "EXAMINE"; target: ResolvedInspectable | null })
+  | (BaseContext & { kind: "SLEEP"; target: null });
+
+export interface ActionValidationSuccess {
+  possible: true;
+  context: ValidatedActionContext;
 }
 
-function findEntityAtLocation(state: WorldState, locationId: string, query: string | null) {
-  if (!query) return null;
-  const q = normalize(query);
-  return getEntitiesAt(state, locationId).find(
-    (e) => e.id !== state.controlledEntityId && normalize(e.name).includes(q)
-  ) ?? null;
+export type ValidationResult = ActionValidationSuccess | ActionFailure;
+
+function fail(
+  code: ActionFailureCode,
+  reason: string,
+  actor: Entity | null,
+  candidateIds?: string[],
+): ActionFailure {
+  return { possible: false, code, reason, actor, candidateIds };
 }
 
-function findObjectAvailable(state: WorldState, query: string | null) {
-  if (!query) return null;
-  const q = normalize(query);
-  const controlled = getControlledEntity(state);
-
-  // Inventaire du personnage contrôlé en priorité
-  for (const objId of controlled.inventory) {
-    const obj = state.objects[objId];
-    if (obj && normalize(obj.name).includes(q)) return obj;
-  }
-
-  // Objets au sol ou portés par des entités dans le même lieu
-  const locationId = controlled.locationId;
-  const all = Object.values(state.objects).filter(
-    (o) =>
-      o.locationId === locationId ||
-      (o.ownerId !== null && state.entities[o.ownerId]?.locationId === locationId)
+function ambiguous(actor: Entity, candidateIds: string[]): ActionFailure {
+  return fail(
+    "TARGET_AMBIGUOUS",
+    "La cible demandée est ambiguë.",
+    actor,
+    candidateIds,
   );
-  return all.find((o) => normalize(o.name).includes(q)) ?? null;
 }
 
-export function validateAction(state: WorldState, action: StructuredAction): ValidationResult {
-  const controlled = getControlledEntity(state);
-  const currentLocation = state.locations[controlled.locationId];
+export function validateAction(
+  state: WorldState,
+  actorId: EntityId,
+  action: StructuredAction,
+): ValidationResult {
+  const actor = state.entities[actorId];
+  if (!actor)
+    return fail("ACTOR_NOT_FOUND", `Acteur introuvable : ${actorId}.`, null);
+  const location = state.locations[actor.locationId];
+  if (!location) {
+    return fail(
+      "ACTOR_LOCATION_NOT_FOUND",
+      `L'acteur ${actorId} n'a pas de lieu valide.`,
+      actor,
+    );
+  }
+  const base = { actor, location, action };
 
   switch (action.actionType) {
     case "move": {
       const target = findLocationByQuery(state, action.targetName);
-      if (!target) return fail(`Vous ne savez pas comment aller à "${action.targetName ?? "?"}".`);
-      if (!currentLocation.connectedLocations.includes(target.id)) {
-        return fail(`${target.name} n'est pas directement accessible depuis ${currentLocation.name}.`);
+      if (target.status === "MISSING") {
+        return fail(
+          "TARGET_NOT_FOUND",
+          `Vous ne savez pas comment aller à "${action.targetName ?? "?"}".`,
+          actor,
+        );
       }
-      if (target.id === controlled.locationId) return fail(`Vous êtes déjà à ${target.name}.`);
-      return OK;
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
+      if (target.target.id === actor.locationId) {
+        return fail(
+          "ACTION_NOT_ALLOWED",
+          `Vous êtes déjà à ${target.target.name}.`,
+          actor,
+        );
+      }
+      if (!location.connectedLocations.includes(target.target.id)) {
+        return fail(
+          "ACTION_NOT_ALLOWED",
+          `${target.target.name} n'est pas directement accessible depuis ${location.name}.`,
+          actor,
+        );
+      }
+      return {
+        possible: true,
+        context: { ...base, kind: "MOVE", target: target.target },
+      };
     }
-
     case "speak": {
-      if (!action.targetName) return fail("À qui voulez-vous parler ?");
-      const entity = findEntityAtLocation(state, controlled.locationId, action.targetName);
-      if (!entity) return fail(`Personne du nom de "${action.targetName}" n'est ici.`);
-      return OK;
-    }
-
-    case "take": {
-      const obj = findObjectAvailable(state, action.targetName);
-      if (!obj) return fail(`Vous ne voyez pas "${action.targetName ?? "cet objet"}" ici.`);
-      if (controlled.inventory.includes(obj.id)) return fail(`Vous avez déjà ${obj.name} dans vos affaires.`);
-      return OK;
-    }
-
-    case "examine": {
-      // On peut toujours examiner — si la cible n'existe pas, l'engine le notera dans les faits
-      return OK;
-    }
-
-    case "eat": {
-      const obj = findObjectAvailable(state, action.targetName);
-      if (!obj) return fail(`Vous n'avez pas "${action.targetName ?? "de quoi manger"}" sur vous.`);
-      if (!controlled.inventory.includes(obj.id)) {
-        return fail(`${obj.name} ne vous appartient pas.`);
+      if (!action.targetName) {
+        return fail("TARGET_NOT_FOUND", "À qui voulez-vous parler ?", actor);
       }
-      return OK;
+      const target = findEntityAtLocation(
+        state,
+        actorId,
+        actor.locationId,
+        action.targetName,
+      );
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
+      return target.status === "FOUND"
+        ? {
+            possible: true,
+            context: { ...base, kind: "SPEAK", target: target.target },
+          }
+        : fail(
+            "TARGET_NOT_FOUND",
+            `Personne du nom de "${action.targetName}" n'est ici.`,
+            actor,
+          );
     }
-
-    case "sleep": {
-      return OK; // peut dormir partout dans ce prototype
+    case "take": {
+      const resolved = resolveObjectInActorContext(
+        state,
+        actorId,
+        action.targetName,
+      );
+      if (resolved.status === "MISSING") {
+        return fail(
+          "TARGET_NOT_FOUND",
+          `Vous ne voyez pas "${action.targetName ?? "cet objet"}" ici.`,
+          actor,
+        );
+      }
+      if (resolved.status === "AMBIGUOUS") {
+        return ambiguous(actor, resolved.candidateIds);
+      }
+      if (resolved.target.availability === "ACTOR_INVENTORY") {
+        return fail(
+          "ACTION_NOT_ALLOWED",
+          `Vous avez déjà ${resolved.target.object.name} dans vos affaires.`,
+          actor,
+        );
+      }
+      return {
+        possible: true,
+        context: {
+          ...base,
+          kind: "TAKE",
+          target: resolved.target.object,
+          availability: resolved.target.availability,
+        },
+      };
     }
-
-    case "give": {
-      if (!action.targetName) return fail("À qui voulez-vous donner, et quoi ?");
-      return OK;
+    case "examine": {
+      const target = findInspectable(state, actorId, action.targetName);
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
+      return {
+        possible: true,
+        context: {
+          ...base,
+          kind: "EXAMINE",
+          target: target.status === "FOUND" ? target.target : null,
+        },
+      };
     }
-
-    case "attack": {
-      return fail("La violence n'est pas implémentée dans cette version du monde.");
+    case "eat": {
+      const resolved = resolveObjectInActorContext(
+        state,
+        actorId,
+        action.targetName,
+      );
+      if (resolved.status === "MISSING") {
+        return fail(
+          "TARGET_NOT_FOUND",
+          `Vous n'avez pas "${action.targetName ?? "de quoi manger"}" sur vous.`,
+          actor,
+        );
+      }
+      if (resolved.status === "AMBIGUOUS") {
+        return ambiguous(actor, resolved.candidateIds);
+      }
+      if (resolved.target.availability !== "ACTOR_INVENTORY") {
+        return fail(
+          "ACTION_NOT_ALLOWED",
+          `${resolved.target.object.name} ne vous appartient pas.`,
+          actor,
+        );
+      }
+      if (resolved.target.object.properties.edible !== true) {
+        return fail(
+          "OBJECT_NOT_EDIBLE",
+          `${resolved.target.object.name} n'est pas comestible.`,
+          actor,
+        );
+      }
+      return {
+        possible: true,
+        context: {
+          ...base,
+          kind: "EAT",
+          target: resolved.target.object,
+          availability: resolved.target.availability,
+        },
+      };
     }
-
-    case "use": {
-      return OK;
-    }
-
-    case "unknown": {
-      return fail("Vous ne savez pas comment faire cela.");
-    }
-
-    default:
-      return fail("Action inconnue.");
+    case "sleep":
+      return {
+        possible: true,
+        context: { ...base, kind: "SLEEP", target: null },
+      };
+    case "give":
+    case "use":
+      return fail(
+        "ACTION_NOT_IMPLEMENTED",
+        `L'action ${action.actionType} n'est pas encore implémentée.`,
+        actor,
+      );
+    case "attack":
+      return fail(
+        "ACTION_NOT_ALLOWED",
+        "La violence n'est pas implémentée dans cette version du monde.",
+        actor,
+      );
+    case "unknown":
+      return fail(
+        "ACTION_NOT_ALLOWED",
+        "Vous ne savez pas comment faire cela.",
+        actor,
+      );
   }
 }

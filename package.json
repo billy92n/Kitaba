@@ -6,17 +6,23 @@
   "scripts": {
     "preinstall": "node ./scripts/enforce-pnpm.mjs",
     "build": "pnpm -r --if-present run build",
+    "audit:engine-source": "node ./scripts/check-engine-source.mjs",
+    "lint": "eslint \"artifacts/api-server/src/{engine,services,tests}/**/*.ts\"",
+    "format:check": "prettier --check \"artifacts/api-server/src/{engine,tests,services}/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \".github/workflows/*.yml\"",
     "test": "pnpm -r --if-present run test",
+    "test:coverage": "pnpm --filter @workspace/api-server run test:coverage",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+    "check": "pnpm run audit:engine-source && pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
+    "eslint": "10.8.0",
     "prettier": "^3.9.5",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "typescript-eslint": "8.65.0"
   }
 }

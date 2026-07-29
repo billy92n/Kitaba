@@ -106,6 +106,11 @@ export type BadRequestResponse = ErrorResponse;
 export type NotFoundResponse = ErrorResponse;
 
 /**
+ * World version changed before the action could be committed
+ */
+export type ConflictResponse = ErrorResponse;
+
+/**
  * Internal server error
  */
 export type InternalServerErrorResponse = ErrorResponse;

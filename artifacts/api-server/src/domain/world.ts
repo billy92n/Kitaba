@@ -9,7 +9,13 @@ export interface WorldTime {
   year: number;
   season: "printemps" | "été" | "automne" | "hiver";
   day: number;
+  /**
+   * Heure entière. Les anciennes sauvegardes peuvent contenir une fraction :
+   * normalizeWorldTime la convertit sans perte vers minute.
+   */
   hour: number;
+  /** Minute entière dans l'heure. Absente dans les sauvegardes historiques. */
+  minute?: number;
 }
 
 export interface WorldLocation {
@@ -45,35 +51,85 @@ export interface WorldState {
 
 // ─── Helpers de lecture (ne mutent jamais le monde) ─────────────────────────────
 
-export function getLocation(state: WorldState, id: LocationId): WorldLocation | undefined {
+export function getLocation(
+  state: WorldState,
+  id: LocationId,
+): WorldLocation | undefined {
   return state.locations[id];
 }
 
-export function getEntity(state: WorldState, id: EntityId): import("./entities.js").Entity | undefined {
+export function getEntity(
+  state: WorldState,
+  id: EntityId,
+): import("./entities.js").Entity | undefined {
   return state.entities[id];
 }
 
-export function getObject(state: WorldState, id: ObjectId): WorldObject | undefined {
+export function getObject(
+  state: WorldState,
+  id: ObjectId,
+): WorldObject | undefined {
   return state.objects[id];
 }
 
-export function getControlledEntity(state: WorldState): import("./entities.js").Entity {
+export function getControlledEntity(
+  state: WorldState,
+): import("./entities.js").Entity {
   const entity = state.entities[state.controlledEntityId];
-  if (!entity) throw new Error(`Controlled entity ${state.controlledEntityId} not found in world state`);
+  if (!entity)
+    throw new Error(
+      `Controlled entity ${state.controlledEntityId} not found in world state`,
+    );
   return entity;
 }
 
-export function getEntitiesAt(state: WorldState, locationId: LocationId): import("./entities.js").Entity[] {
-  return Object.values(state.entities).filter((e) => e.locationId === locationId);
+export function getEntitiesAt(
+  state: WorldState,
+  locationId: LocationId,
+): import("./entities.js").Entity[] {
+  return Object.values(state.entities).filter(
+    (e) => e.locationId === locationId,
+  );
 }
 
-export function getObjectsAt(state: WorldState, locationId: LocationId): WorldObject[] {
-  return Object.values(state.objects).filter((o) => o.locationId === locationId && o.ownerId === null);
+export function getObjectsAt(
+  state: WorldState,
+  locationId: LocationId,
+): WorldObject[] {
+  return Object.values(state.objects).filter(
+    (o) => o.locationId === locationId && o.ownerId === null,
+  );
 }
 
 export function formatWorldDate(time: WorldTime): string {
-  const dayNames = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-  const dayName = dayNames[(time.day - 1) % 7];
-  const hourStr = time.hour.toString().padStart(2, "0") + "h00";
-  return `${dayName}, ${time.season} — An ${time.year}, ${hourStr}`;
+  const normalized = normalizeWorldTime(time);
+  const dayNames = [
+    "Lundi",
+    "Mardi",
+    "Mercredi",
+    "Jeudi",
+    "Vendredi",
+    "Samedi",
+    "Dimanche",
+  ];
+  const dayName = dayNames[(normalized.day - 1) % 7];
+  const hourStr =
+    normalized.hour.toString().padStart(2, "0") +
+    "h" +
+    (normalized.minute ?? 0).toString().padStart(2, "0");
+  return `${dayName}, ${normalized.season} — An ${normalized.year}, ${hourStr}`;
+}
+
+export function normalizeWorldTime(time: WorldTime): Required<WorldTime> {
+  const legacyTotalMinutes =
+    time.minute === undefined
+      ? Math.round(time.hour * 60)
+      : Math.trunc(time.hour) * 60 + time.minute;
+  return {
+    year: time.year,
+    season: time.season,
+    day: time.day,
+    hour: Math.floor(legacyTotalMinutes / 60),
+    minute: legacyTotalMinutes % 60,
+  };
 }

@@ -1,86 +1,112 @@
-// engine/actionResolver.ts — Orchestre validation, conséquences et avance du temps.
-// Reçoit une StructuredAction déjà parsée. N'interprète JAMAIS le langage naturel.
-// Retourne : le nouvel état du monde, un événement factuel, et les faits observables.
-// Ne produit aucune narration.
+// Orchestre validation, conséquences et temps sans interpréter le langage naturel.
 
 import { randomUUID } from "crypto";
-import type { WorldState } from "../domain/world.js";
 import type { StructuredAction } from "../domain/actions.js";
 import type { GameEvent } from "../domain/events.js";
-import type { ActionOutcome } from "../domain/knowledge.js";
-import { getControlledEntity } from "../domain/world.js";
-import { validateAction } from "./actionValidator.js";
+import type { EntityId, WorldState } from "../domain/world.js";
+import { validateAction, type ActionFailureCode } from "./actionValidator.js";
 import { applyConsequences } from "./consequenceEngine.js";
-import { applyTimeAndDecay } from "./timeEngine.js";
+import { applyTimeAndDecay, catchUpEntity } from "./timeEngine.js";
 
-export interface ResolvedAction {
-  success: boolean;
-  newWorldState: WorldState;
-  event: GameEvent;
-  actionOutcome: ActionOutcome;
+export const UNRESOLVED_LOCATION_ID = "unresolved";
+
+export interface ResolutionDependencies {
+  createEventId(): string;
 }
 
-export function resolveAction(state: WorldState, action: StructuredAction): ResolvedAction {
-  const controlled = getControlledEntity(state);
-  const validation = validateAction(state, action);
+const defaultDependencies: ResolutionDependencies = {
+  createEventId: randomUUID,
+};
+
+interface ResolutionBase {
+  newWorldState: WorldState;
+  event: GameEvent;
+}
+
+export interface ResolvedActionSuccess extends ResolutionBase {
+  success: true;
+}
+
+export interface ResolvedActionFailure extends ResolutionBase {
+  success: false;
+  failureCode: ActionFailureCode;
+}
+
+export type ResolvedAction = ResolvedActionSuccess | ResolvedActionFailure;
+
+export function resolveAction(
+  state: WorldState,
+  actorId: EntityId,
+  action: StructuredAction,
+  dependencies: ResolutionDependencies = defaultDependencies,
+): ResolvedAction {
+  const storedActor = state.entities[actorId];
+  const activeActor = storedActor
+    ? catchUpEntity(storedActor, state.time)
+    : undefined;
+  const activeState =
+    activeActor && activeActor !== storedActor
+      ? {
+          ...state,
+          entities: { ...state.entities, [actorId]: activeActor },
+        }
+      : state;
+  const validation = validateAction(activeState, actorId, action);
 
   if (!validation.possible) {
-    // Action impossible — aucun changement d'état
     const event: GameEvent = {
-      id: randomUUID(),
-      sessionId: "",            // rempli par gameService après création
+      id: dependencies.createEventId(),
+      sessionId: "",
       worldVersion: state.worldVersion,
       actionType: action.actionType,
-      actorId: controlled.id,
-      locationId: controlled.locationId,
+      actorId,
+      locationId: validation.actor?.locationId ?? UNRESOLVED_LOCATION_ID,
       targetId: null,
-      description: `[BLOQUÉ] ${validation.reason ?? "Action impossible"}`,
+      description: `[BLOQUÉ] [${validation.code}] ${validation.reason}`,
       consequences: [],
       occurredAt: state.time,
+      status: "REJECTED",
+      requestedTargetName: action.targetName,
+      observations: [{ audience: "ACTOR", text: validation.reason }],
     };
-
-    const outcome: ActionOutcome = {
-      actionType: action.actionType,
+    return {
       success: false,
-      targetName: action.targetName,
-      observableFacts: [validation.reason ?? "Action impossible."],
+      failureCode: validation.code,
+      newWorldState: state,
+      event,
     };
-
-    return { success: false, newWorldState: state, event, actionOutcome: outcome };
   }
 
-  // Calcule et applique les conséquences
-  const { newWorldState: stateAfterConsequences, observableFacts, consequences, targetId } =
-    applyConsequences(state, action);
-
-  // Avance le temps et applique le déclin passif
-  const stateAfterTime = applyTimeAndDecay(stateAfterConsequences, action.actionType);
-
-  // Incrémente worldVersion
+  const consequence = applyConsequences(activeState, validation.context);
+  const stateAfterTime = applyTimeAndDecay(
+    consequence.newWorldState,
+    consequence.actorAfter,
+    action.actionType,
+  );
   const newWorldState: WorldState = {
     ...stateAfterTime,
     worldVersion: state.worldVersion + 1,
   };
 
-  const event: GameEvent = {
-    id: randomUUID(),
-    sessionId: "",              // rempli par gameService
-    worldVersion: newWorldState.worldVersion,
-    actionType: action.actionType,
-    actorId: controlled.id,
-    locationId: controlled.locationId,
-    targetId,
-    description: `${controlled.name} : ${action.actionType} → ${action.targetName ?? "—"}`,
-    consequences,
-    occurredAt: state.time,    // moment où l'action a eu lieu (avant l'avance du temps)
-  };
-
-  const outcome: ActionOutcome = {
-    actionType: action.actionType,
+  return {
     success: true,
-    targetName: action.targetName,
-    observableFacts,
+    newWorldState,
+    event: {
+      id: dependencies.createEventId(),
+      sessionId: "",
+      worldVersion: newWorldState.worldVersion,
+      actionType: action.actionType,
+      actorId: validation.context.actor.id,
+      // Convention : lieu de départ, afin de préserver le contexte de l'action.
+      locationId: validation.context.location.id,
+      targetId: consequence.targetId,
+      description: `${validation.context.actor.name} : ${action.actionType} → ${action.targetName ?? "—"}`,
+      consequences: consequence.consequences,
+      // Convention : instant du monde avant l'application du coût temporel.
+      occurredAt: state.time,
+      status: "APPLIED",
+      requestedTargetName: action.targetName,
+      observations: consequence.observations,
+    },
   };
-
-  return { success: true, newWorldState, event, actionOutcome: outcome };
 }

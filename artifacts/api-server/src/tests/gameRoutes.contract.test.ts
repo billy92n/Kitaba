@@ -1,12 +1,21 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   ListSavesResponse,
   NewGameResponse,
   SaveGameResponse,
   SubmitActionResponse,
 } from "@workspace/api-zod";
+import { WorldVersionConflictError } from "../services/actionCommit.js";
 
 const service = vi.hoisted(() => ({
   startNewGame: vi.fn(),
@@ -44,7 +53,7 @@ async function request(path: string, init?: RequestInit) {
   });
   return {
     status: response.status,
-    body: (await response.json()) as unknown,
+    body: await response.json(),
   };
 }
 
@@ -101,7 +110,9 @@ describe("contrats HTTP du jeu", () => {
 
     expect(response.status).toBe(200);
     expect(SubmitActionResponse.parse(response.body)).toEqual(response.body);
-    expect((response.body as { worldVersion: unknown }).worldVersion).toBeTypeOf("number");
+    expect(
+      (response.body as { worldVersion: unknown }).worldVersion,
+    ).toBeTypeOf("number");
   });
 
   it("conserve le même contrat pour une action refusée", async () => {
@@ -113,14 +124,37 @@ describe("contrats HTTP du jeu", () => {
 
     const response = await request("/api/game/action", {
       method: "POST",
-      body: JSON.stringify({ sessionId: "session-1", playerInput: "traverser le mur" }),
+      body: JSON.stringify({
+        sessionId: "session-1",
+        playerInput: "traverser le mur",
+      }),
     });
 
     expect(response.status).toBe(200);
     expect(SubmitActionResponse.safeParse(response.body).success).toBe(true);
-    expect((response.body as { narrativeEntry: { text: string } }).narrativeEntry.text).toContain(
-      "bloqué",
+    expect(
+      (response.body as { narrativeEntry: { text: string } }).narrativeEntry
+        .text,
+    ).toContain("bloqué");
+  });
+
+  it("retourne un conflit métier explicite si la version du monde a changé", async () => {
+    service.processPlayerAction.mockRejectedValue(
+      new WorldVersionConflictError("session-1", 3),
     );
+
+    const response = await request("/api/game/action", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: "session-1",
+        playerInput: "avancer",
+      }),
+    });
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: "WORLD_VERSION_CONFLICT" },
+    });
   });
 
   it("retourne les métadonnées stables d'une sauvegarde manuelle", async () => {
@@ -132,7 +166,10 @@ describe("contrats HTTP du jeu", () => {
 
     const response = await request("/api/game/save", {
       method: "POST",
-      body: JSON.stringify({ sessionId: "session-1", saveName: "Avant le marché" }),
+      body: JSON.stringify({
+        sessionId: "session-1",
+        saveName: "Avant le marché",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -155,8 +192,10 @@ describe("contrats HTTP du jeu", () => {
 
     expect(response.status).toBe(200);
     expect(ListSavesResponse.parse(response.body)).toEqual(response.body);
-    expect((response.body as { saves: Array<{ worldVersion: unknown }> }).saves[0]?.worldVersion)
-      .toBeTypeOf("number");
+    expect(
+      (response.body as { saves: Array<{ worldVersion: unknown }> }).saves[0]
+        ?.worldVersion,
+    ).toBeTypeOf("number");
   });
 
   it("rejette un corps invalide avec l'erreur HTTP commune", async () => {

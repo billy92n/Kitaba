@@ -35,11 +35,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate OpenAPI clients
-        run: pnpm --filter @workspace/api-spec run codegen
+      - name: Generate OpenAPI clients twice
+        run: |
+          pnpm --filter @workspace/api-spec run codegen
+          pnpm --filter @workspace/api-spec run codegen
 
       - name: Verify generated clients are committed
         run: git diff --exit-code -- lib/api-client-react/src/generated lib/api-zod/src/generated
 
       - name: Check
         run: pnpm run check
+
+      - name: Engine coverage
+        run: pnpm run test:coverage
