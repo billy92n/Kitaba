@@ -209,10 +209,34 @@ describe("autonomous turn service", () => {
     expect(
       prepared.prepared.resolution.newWorldState.entities.tariq
         .autonomyDecisionState,
-    ).toEqual({
+    ).toMatchObject({
       intentKey: prepared.prepared.decisionTrace.selectedCandidateKey,
       remainingCommitmentTurns: 2,
     });
+  });
+
+  it("persists the maximum readable commitment and can plan the next turn", () => {
+    const session = snapshot();
+    const first = prepareAutonomousTurn(
+      session.worldState,
+      "tariq",
+      { seed: "max-commitment", commitmentTurns: 10 },
+      () => "event-one",
+    );
+    expect(first.success).toBe(true);
+    if (!first.success) return;
+    const nextState = first.prepared.resolution.newWorldState;
+    expect(
+      nextState.entities.tariq.autonomyDecisionState?.remainingCommitmentTurns,
+    ).toBe(10);
+    expect(
+      prepareAutonomousTurn(
+        nextState,
+        "tariq",
+        { seed: "max-commitment", commitmentTurns: 10 },
+        () => "event-two",
+      ),
+    ).toMatchObject({ success: true });
   });
 
   it("does not persist commitment when normal validation rejects the intention", () => {
@@ -250,6 +274,27 @@ describe("autonomous turn service", () => {
     expect(
       await runAutonomousTurn(session.id, "missing", { seed: 1 }, deps),
     ).toMatchObject({ status: "REFUSED", code: "ACTOR_NOT_FOUND" });
+    expect(port.commits).toHaveLength(0);
+  });
+
+  it("refuses a mismatched SQL and serialized world revision", async () => {
+    const session = snapshot();
+    session.worldVersion = session.worldState.worldVersion + 1;
+    const port = new InMemoryCommitPort(session);
+
+    expect(
+      await runAutonomousTurn(
+        session.id,
+        "tariq",
+        { seed: "version-mismatch" },
+        dependencies(session, port, "mismatch"),
+      ),
+    ).toEqual({
+      status: "REFUSED",
+      code: "SESSION_VERSION_MISMATCH",
+      reason:
+        "The persisted session revision and serialized world revision differ.",
+    });
     expect(port.commits).toHaveLength(0);
   });
 });
