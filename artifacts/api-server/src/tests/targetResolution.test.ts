@@ -11,8 +11,8 @@ import { createInitialWorldState } from "../worldSeed.js";
 describe("normalisation des cibles", () => {
   it.each([
     ["  FORGE  ", "forge"],
-    ["TavÃ©rne", "taverne"],
-    ["dâ€™Oumou", "d oumou"],
+    ["Tavérne", "taverne"],
+    ["d’Oumou", "d oumou"],
     ["l'Oumou", "l oumou"],
     ["---", ""],
   ])("normalise %j en %j", (input, expected) => {
@@ -20,19 +20,19 @@ describe("normalisation des cibles", () => {
   });
 });
 
-describe("rÃ©solution discriminÃ©e et stable", () => {
+describe("résolution discriminée et stable", () => {
   it.each([
     ["la Taverne du Loup Gris", "taverne_du_loup"],
-    ["Lâ€™forge de Hamid", "forge_hamid"],
+    ["L’forge de Hamid", "forge_hamid"],
     ["FERME D'OUMOU", "ferme_oumou"],
     ["forge_hamid", "forge_hamid"],
     [" ", null],
-  ])("rÃ©sout le lieu %j", (query, expected) => {
+  ])("résout le lieu %j", (query, expected) => {
     const result = findLocationByQuery(createInitialWorldState("Yara"), query);
     expect(result.status === "FOUND" ? result.target.id : null).toBe(expected);
   });
 
-  it("prÃ©fÃ¨re l'Ã©galitÃ© et refuse les meilleurs prÃ©fixes ambigus", () => {
+  it("préfère l'égalité et refuse les meilleurs préfixes ambigus", () => {
     const state = createInitialWorldState("Yara");
     state.entities.alia = { ...state.entities.leila, id: "alia", name: "Ali" };
     state.entities.alim = { ...state.entities.leila, id: "alim", name: "Alim" };
@@ -82,7 +82,7 @@ describe("rÃ©solution discriminÃ©e et stable", () => {
     });
   });
 
-  it("rÃ©sout objets, entitÃ©s, lieu courant et sorties inspectables", () => {
+  it("résout objets, entités, lieu courant et sorties inspectables", () => {
     const state = createInitialWorldState("Yara");
     expect(findInspectable(state, "tariq", "lanterne")).toMatchObject({
       status: "FOUND",
@@ -119,11 +119,11 @@ describe("rÃ©solution discriminÃ©e et stable", () => {
   });
 
   it.each([
-    ["prÃ©fixes", "Ali", "Al"],
+    ["préfixes", "Ali", "Al"],
     ["partielles", "Jean Rouge", "Rouge"],
     ["identiques", "Sam", "Sam"],
   ])(
-    "refuse les cibles %s Ã©quivalentes indÃ©pendamment de l'insertion",
+    "refuse les cibles %s équivalentes indépendamment de l'insertion",
     (_label, name, query) => {
       const first = createInitialWorldState("Yara");
       first.entities.zed = { ...first.entities.leila, id: "zed", name };
