@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { StructuredAction } from "../domain/actions.js";
+import type { GameEvent } from "../domain/events.js";
 import type { WorldTime } from "../domain/world.js";
 import {
   resolveAction,
   type ResolutionDependencies,
 } from "../engine/actionResolver.js";
-import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
+import {
+  buildPerceptibleFacts,
+  resolveObservedAction,
+} from "../engine/perceptionEngine.js";
 import {
   advanceTime,
   applyPassiveDecay,
   applyTimeAndDecay,
+  catchUpEntity,
+  elapsedWorldMinutes,
   getTimeCostMinutes,
 } from "../engine/timeEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
@@ -256,8 +262,8 @@ describe("contrats du moteur", () => {
       failureCode: "TARGET_AMBIGUOUS",
       newWorldState: state,
     });
-    expect(JSON.stringify(result.actionOutcome)).not.toContain("alia");
-    expect(JSON.stringify(result.actionOutcome)).not.toContain("alim");
+    expect(JSON.stringify(result.event.observations)).not.toContain("alia");
+    expect(JSON.stringify(result.event.observations)).not.toContain("alim");
   });
 
   it.each(["move", "take", "examine", "eat"] as const)(
@@ -382,6 +388,108 @@ describe("contrats du moteur", () => {
     expect(
       advanceTime({ year: 1, season: "printemps", day: 1, hour: 8.25 }, 15),
     ).toMatchObject({ hour: 8, minute: 30 });
+  });
+
+  it("rattrape paresseusement un PNJ resté inactif pendant plusieurs jours", () => {
+    let state = createInitialWorldState("Yara");
+    state.entities.hamid = {
+      ...state.entities.hamid,
+      hunger: 100,
+      fatigue: 100,
+    };
+    const hamidBefore = state.entities.hamid;
+    for (let index = 0; index < 12; index += 1) {
+      state = resolveAction(
+        state,
+        "player",
+        action("sleep"),
+        deterministic,
+      ).newWorldState;
+    }
+    expect(state.entities.hamid).toBe(hamidBefore);
+    const lastSimulationTime = hamidBefore.lastSimulationTime;
+    expect(lastSimulationTime).toBeDefined();
+    if (!lastSimulationTime) {
+      throw new Error("Le curseur temporel initial de Hamid est absent.");
+    }
+    expect(elapsedWorldMinutes(lastSimulationTime, state.time)).toBe(
+      3 * 24 * 60,
+    );
+
+    const activated = resolveAction(
+      state,
+      "hamid",
+      action("examine", "forge"),
+      deterministic,
+    );
+    expect(activated.success).toBe(true);
+    expect(activated.newWorldState.entities.hamid).toMatchObject({
+      hunger: 0,
+      fatigue: 0,
+      lastSimulationTime: activated.newWorldState.time,
+    });
+  });
+
+  it("une ellipse temporelle agrège les besoins sans simuler chaque action", () => {
+    const state = createInitialWorldState("Yara");
+    const entity = {
+      ...state.entities.tariq,
+      hunger: 80,
+      fatigue: 80,
+    };
+    const future = advanceTime(state.time, 10 * 24 * 60);
+    const caughtUp = catchUpEntity(entity, future);
+    expect(caughtUp).toMatchObject({
+      hunger: 0,
+      fatigue: 0,
+      lastSimulationTime: future,
+    });
+    expect(catchUpEntity(caughtUp, future)).toBe(caughtUp);
+  });
+
+  it("initialise sans dette rétroactive une sauvegarde historique sans curseur", () => {
+    const state = createInitialWorldState("Yara");
+    const { lastSimulationTime: _legacyCursor, ...legacyEntity } =
+      state.entities.hamid;
+    const currentTime = advanceTime(state.time, 600);
+    const caughtUp = catchUpEntity(legacyEntity, currentTime);
+
+    expect(caughtUp).toEqual({
+      ...legacyEntity,
+      lastSimulationTime: currentTime,
+    });
+  });
+
+  it("ne recule jamais le curseur temporel d'une entité", () => {
+    const state = createInitialWorldState("Yara");
+    const future = advanceTime(state.time, 60);
+    const entity = { ...state.entities.hamid, lastSimulationTime: future };
+
+    expect(catchUpEntity(entity, state.time)).toBe(entity);
+  });
+
+  it("applique le même rattrapage à un PNJ et à l'entité contrôlée", () => {
+    const state = createInitialWorldState("Yara");
+    const future = advanceTime(state.time, 120);
+    const shared = {
+      hunger: 70,
+      fatigue: 85,
+      lastSimulationTime: state.time,
+    };
+    const player = catchUpEntity(
+      { ...state.entities.player, ...shared },
+      future,
+    );
+    const npc = catchUpEntity({ ...state.entities.hamid, ...shared }, future);
+    expect({
+      hunger: npc.hunger,
+      fatigue: npc.fatigue,
+      lastSimulationTime: npc.lastSimulationTime,
+    }).toEqual({
+      hunger: player.hunger,
+      fatigue: player.fatigue,
+      lastSimulationTime: player.lastSimulationTime,
+    });
   });
 
   it.each(["move", "take", "eat"] as const)(
@@ -525,29 +633,63 @@ describe("contrats du moteur", () => {
 });
 
 describe("perception multi-observateur", () => {
-  const outcome = {
-    actionType: "examine" as const,
-    success: true,
-    targetName: null,
-    observableFacts: [],
+  const event: GameEvent = {
+    id: "event-perception",
+    sessionId: "session",
+    worldVersion: 1,
+    actionType: "examine",
+    actorId: "player",
+    locationId: "place_centrale",
+    targetId: null,
+    description: "inspection",
+    consequences: [],
+    occurredAt: {
+      year: 1,
+      season: "automne",
+      day: 3,
+      hour: 9,
+      minute: 0,
+    },
+    status: "APPLIED",
+    requestedTargetName: null,
+    observations: [{ audience: "ACTOR", text: "inspection privée" }],
   };
 
   it("retourne des erreurs typées pour observateur ou lieu absent", () => {
     const state = createInitialWorldState("Yara");
-    expect(buildPerceptibleFacts(state, "absent", outcome)).toMatchObject({
+    expect(buildPerceptibleFacts(state, "absent", event)).toMatchObject({
       success: false,
       code: "OBSERVER_NOT_FOUND",
     });
     state.entities.hamid = { ...state.entities.hamid, locationId: "absent" };
-    expect(buildPerceptibleFacts(state, "hamid", outcome)).toMatchObject({
+    expect(buildPerceptibleFacts(state, "hamid", event)).toMatchObject({
       success: false,
       code: "OBSERVER_LOCATION_NOT_FOUND",
     });
   });
 
+  it("ne résout aucune observation pour un identifiant d'observateur absent", () => {
+    const state = createInitialWorldState("Yara");
+    expect(resolveObservedAction(state, "absent", event)).toBeNull();
+  });
+
+  it("projette explicitement le statut d'une tentative refusée vers son acteur", () => {
+    const state = createInitialWorldState("Yara");
+    expect(
+      resolveObservedAction(state, "player", {
+        ...event,
+        status: "REJECTED",
+        observations: [{ audience: "ACTOR", text: "Tentative refusée." }],
+      }),
+    ).toMatchObject({
+      success: false,
+      observableFacts: ["Tentative refusée."],
+    });
+  });
+
   it("exclut soi, les autres lieux et les inventaires tiers", () => {
     const state = createInitialWorldState("Yara");
-    const result = buildPerceptibleFacts(state, "tariq", outcome);
+    const result = buildPerceptibleFacts(state, "tariq", event);
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.facts.presentEntities.map((entity) => entity.name)).toEqual([
@@ -574,7 +716,7 @@ describe("perception multi-observateur", () => {
       ...state.entities.player,
       inventory: ["absent"],
     };
-    const result = buildPerceptibleFacts(state, "player", outcome);
+    const result = buildPerceptibleFacts(state, "player", event);
     expect(result).toMatchObject({
       success: true,
       facts: {
@@ -585,3 +727,4 @@ describe("perception multi-observateur", () => {
     });
   });
 });
+

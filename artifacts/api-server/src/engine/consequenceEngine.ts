@@ -2,11 +2,12 @@
 
 import type { WorldState } from "../domain/world.js";
 import type { Entity } from "../domain/entities.js";
+import type { EventObservation } from "../domain/events.js";
 import type { ValidatedActionContext } from "./actionValidator.js";
 
 export interface ConsequenceResult {
   newWorldState: WorldState;
-  observableFacts: string[];
+  observations: EventObservation[];
   consequences: string[];
   targetId: string | null;
   actorAfter: Entity;
@@ -46,7 +47,13 @@ export function applyConsequences(
             },
           },
         },
-        observableFacts: [`Vous entrez dans ${target.name}.`],
+        observations: [
+          { audience: "ACTOR", text: `Vous entrez dans ${target.name}.` },
+          {
+            audience: "LOCATION",
+            text: `${actor.name} quitte ${source.name}.`,
+          },
+        ],
         consequences: [
           `entity:${actor.id}:locationId:${source.id}→${target.id}`,
         ],
@@ -57,7 +64,16 @@ export function applyConsequences(
     case "SPEAK":
       return {
         newWorldState: state,
-        observableFacts: [`${context.target.name} vous répond brièvement.`],
+        observations: [
+          {
+            audience: "ACTOR",
+            text: `${context.target.name} vous répond brièvement.`,
+          },
+          {
+            audience: "LOCATION",
+            text: `${actor.name} parle avec ${context.target.name}.`,
+          },
+        ],
         consequences: [],
         targetId: context.target.id,
         actorAfter: actor,
@@ -112,7 +128,16 @@ export function applyConsequences(
               }
             : {}),
         },
-        observableFacts: [`${object.name} est maintenant dans vos affaires.`],
+        observations: [
+          {
+            audience: "ACTOR",
+            text: `${object.name} est maintenant dans vos affaires.`,
+          },
+          {
+            audience: "LOCATION",
+            text: `${actor.name} prend ${object.name}.`,
+          },
+        ],
         consequences: [
           `object:${object.id}:source:${context.availability}→owner:${actor.id}`,
         ],
@@ -123,9 +148,13 @@ export function applyConsequences(
     case "EXAMINE":
       return {
         newWorldState: state,
-        observableFacts: [
-          context.target?.description ??
-            `Vous ne voyez rien de particulier concernant "${context.action.targetName ?? "cela"}".`,
+        observations: [
+          {
+            audience: "ACTOR",
+            text:
+              context.target?.description ??
+              `Vous ne voyez rien de particulier concernant "${context.action.targetName ?? "cela"}".`,
+          },
         ],
         consequences: [],
         targetId: context.target?.id ?? null,
@@ -149,7 +178,16 @@ export function applyConsequences(
           },
           objects: remainingObjects,
         },
-        observableFacts: [`Vous mangez ${object.name}. Votre faim diminue.`],
+        observations: [
+          {
+            audience: "ACTOR",
+            text: `Vous mangez ${object.name}. Votre faim diminue.`,
+          },
+          {
+            audience: "LOCATION",
+            text: `${actor.name} mange ${object.name}.`,
+          },
+        ],
         consequences: [
           `object:${object.id}:consumed`,
           `entity:${actor.id}:hunger:+30`,
@@ -173,8 +211,15 @@ export function applyConsequences(
             [actor.id]: { ...actor, fatigue: fatigueAfter },
           },
         },
-        observableFacts: [
-          "Vous dormez plusieurs heures. Votre fatigue se dissipe.",
+        observations: [
+          {
+            audience: "ACTOR",
+            text: "Vous dormez plusieurs heures. Votre fatigue se dissipe.",
+          },
+          {
+            audience: "LOCATION",
+            text: `${actor.name} s'endort.`,
+          },
         ],
         consequences: [
           `entity:${actor.id}:fatigue:${fatigueBefore}→${fatigueAfter}`,
@@ -185,3 +230,4 @@ export function applyConsequences(
     }
   }
 }
+

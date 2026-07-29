@@ -3,11 +3,10 @@
 import { randomUUID } from "crypto";
 import type { StructuredAction } from "../domain/actions.js";
 import type { GameEvent } from "../domain/events.js";
-import type { ActionOutcome } from "../domain/knowledge.js";
 import type { EntityId, WorldState } from "../domain/world.js";
 import { validateAction, type ActionFailureCode } from "./actionValidator.js";
 import { applyConsequences } from "./consequenceEngine.js";
-import { applyTimeAndDecay } from "./timeEngine.js";
+import { applyTimeAndDecay, catchUpEntity } from "./timeEngine.js";
 
 export const UNRESOLVED_LOCATION_ID = "unresolved";
 
@@ -22,7 +21,6 @@ const defaultDependencies: ResolutionDependencies = {
 interface ResolutionBase {
   newWorldState: WorldState;
   event: GameEvent;
-  actionOutcome: ActionOutcome;
 }
 
 export interface ResolvedActionSuccess extends ResolutionBase {
@@ -42,7 +40,18 @@ export function resolveAction(
   action: StructuredAction,
   dependencies: ResolutionDependencies = defaultDependencies,
 ): ResolvedAction {
-  const validation = validateAction(state, actorId, action);
+  const storedActor = state.entities[actorId];
+  const activeActor = storedActor
+    ? catchUpEntity(storedActor, state.time)
+    : undefined;
+  const activeState =
+    activeActor && activeActor !== storedActor
+      ? {
+          ...state,
+          entities: { ...state.entities, [actorId]: activeActor },
+        }
+      : state;
+  const validation = validateAction(activeState, actorId, action);
 
   if (!validation.possible) {
     const event: GameEvent = {
@@ -56,22 +65,19 @@ export function resolveAction(
       description: `[BLOQUÉ] [${validation.code}] ${validation.reason}`,
       consequences: [],
       occurredAt: state.time,
+      status: "REJECTED",
+      requestedTargetName: action.targetName,
+      observations: [{ audience: "ACTOR", text: validation.reason }],
     };
     return {
       success: false,
       failureCode: validation.code,
       newWorldState: state,
       event,
-      actionOutcome: {
-        actionType: action.actionType,
-        success: false,
-        targetName: action.targetName,
-        observableFacts: [validation.reason],
-      },
     };
   }
 
-  const consequence = applyConsequences(state, validation.context);
+  const consequence = applyConsequences(activeState, validation.context);
   const stateAfterTime = applyTimeAndDecay(
     consequence.newWorldState,
     consequence.actorAfter,
@@ -98,12 +104,10 @@ export function resolveAction(
       consequences: consequence.consequences,
       // Convention : instant du monde avant l'application du coût temporel.
       occurredAt: state.time,
-    },
-    actionOutcome: {
-      actionType: action.actionType,
-      success: true,
-      targetName: action.targetName,
-      observableFacts: consequence.observableFacts,
+      status: "APPLIED",
+      requestedTargetName: action.targetName,
+      observations: consequence.observations,
     },
   };
 }
+

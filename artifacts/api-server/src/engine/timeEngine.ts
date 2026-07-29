@@ -27,6 +27,8 @@ const MINUTES_PER_HOUR = 60;
 const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 const DAYS_PER_SEASON = 30;
 const SEASONS: WorldTime["season"][] = ["printemps", "été", "automne", "hiver"];
+const MINUTES_PER_SEASON = DAYS_PER_SEASON * MINUTES_PER_DAY;
+const MINUTES_PER_YEAR = SEASONS.length * MINUTES_PER_SEASON;
 
 export function advanceTime(
   time: WorldTime,
@@ -78,6 +80,39 @@ export function applyPassiveDecay(entity: Entity, minutes: number): Entity {
   };
 }
 
+export function worldTimeToMinutes(time: WorldTime): number {
+  const normalized = normalizeWorldTime(time);
+  return (
+    (normalized.year - 1) * MINUTES_PER_YEAR +
+    SEASONS.indexOf(normalized.season) * MINUTES_PER_SEASON +
+    (normalized.day - 1) * MINUTES_PER_DAY +
+    normalized.hour * MINUTES_PER_HOUR +
+    normalized.minute
+  );
+}
+
+export function elapsedWorldMinutes(from: WorldTime, to: WorldTime): number {
+  return Math.max(0, worldTimeToMinutes(to) - worldTimeToMinutes(from));
+}
+
+/**
+ * Matérialise en O(1) les effets passifs accumulés depuis la dernière
+ * activation. Une sauvegarde historique sans curseur commence son suivi à
+ * l'instant courant afin d'éviter une migration destructive implicite.
+ */
+export function catchUpEntity(entity: Entity, worldTime: WorldTime): Entity {
+  const currentTime = normalizeWorldTime(worldTime);
+  if (!entity.lastSimulationTime) {
+    return { ...entity, lastSimulationTime: currentTime };
+  }
+  const elapsed = elapsedWorldMinutes(entity.lastSimulationTime, currentTime);
+  if (elapsed === 0) return entity;
+  return {
+    ...applyPassiveDecay(entity, elapsed),
+    lastSimulationTime: currentTime,
+  };
+}
+
 export function getTimeCostMinutes(actionType: ActionType): number {
   return ACTION_TIME_COST_MINUTES[actionType];
 }
@@ -89,12 +124,17 @@ export function applyTimeAndDecay(
 ): WorldState {
   const minutes = getTimeCostMinutes(actionType);
   if (minutes === 0) return state;
+  const nextTime = advanceTime(state.time, minutes);
   return {
     ...state,
-    time: advanceTime(state.time, minutes),
+    time: nextTime,
     entities: {
       ...state.entities,
-      [actor.id]: applyPassiveDecay(actor, minutes),
+      [actor.id]: {
+        ...applyPassiveDecay(actor, minutes),
+        lastSimulationTime: nextTime,
+      },
     },
   };
 }
+

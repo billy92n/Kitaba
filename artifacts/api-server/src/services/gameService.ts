@@ -3,13 +3,7 @@
 // La transaction PostgreSQL garantit l'atomicité de chaque action.
 
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
-import {
-  db,
-  kitabaSessionsTable,
-  kitabaEventsTable,
-  kitabaSavesTable,
-} from "@workspace/db";
+import { db, kitabaSavesTable } from "@workspace/db";
 import { interpretPlayerAction } from "../llm/interpretAction.js";
 import {
   narrateFromPerception,
@@ -28,6 +22,8 @@ import { formatWorldDate, getControlledEntity } from "../domain/world.js";
 import type { NarrativeEntry, CharacterStatus } from "../persistence/types.js";
 import type { WorldState } from "../domain/world.js";
 import type { GameEvent } from "../domain/events.js";
+import { commitAction } from "./actionCommit.js";
+import { postgresActionCommitPort } from "./postgresActionCommit.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -117,7 +113,7 @@ export async function processPlayerAction(
   const perception = buildPerceptibleFacts(
     resolved.newWorldState,
     actorId,
-    resolved.actionOutcome,
+    event,
   );
   if (!perception.success) return null;
 
@@ -137,49 +133,20 @@ export async function processPlayerAction(
 
   const newWorldState = resolved.newWorldState;
 
-  // 5. Persistance atomique dans une transaction PostgreSQL
-  await db.transaction(async (tx) => {
-    // Met à jour la session
-    await tx
-      .update(kitabaSessionsTable)
-      .set({
-        worldVersion: newWorldState.worldVersion,
-        worldState: newWorldState,
-        narrativeHistory: updatedNarrativeHistory,
-        updatedAt: new Date(),
-      })
-      .where(eq(kitabaSessionsTable.id, sessionId));
-
-    // Persiste l'événement dans le journal immuable
-    await tx.insert(kitabaEventsTable).values({
-      id: event.id,
+  // 5. Persistance atomique avec comparaison de la version chargée. En cas de
+  // conflit, aucun événement ni autosave n'est écrit par la transaction.
+  await commitAction(
+    {
       sessionId,
-      worldVersion: event.worldVersion,
-      actionType: event.actionType,
-      actorId: event.actorId,
-      locationId: event.locationId,
-      targetId: event.targetId ?? null,
-      description: event.description,
-      consequences: event.consequences,
-      occurredAt: event.occurredAt,
-    });
-
-    // Une tentative refusée reste à la même worldVersion, mais son UUID de
-    // sauvegarde et son entrée narrative sont uniques : elle demeure auditable
-    // sans prétendre représenter une nouvelle version du monde.
-    const autoSaveName = `auto-v${newWorldState.worldVersion}`;
-    await tx.insert(kitabaSavesTable).values({
-      id: randomUUID(),
-      sessionId,
-      parentSessionId: null,
-      saveType: "auto",
-      saveName: autoSaveName,
-      controlledEntityId: newWorldState.controlledEntityId,
-      worldVersion: newWorldState.worldVersion,
-      worldState: newWorldState,
+      expectedWorldVersion: session.worldVersion,
+      expectedNarrativeHistory: narrativeHistory,
+      newWorldState,
       narrativeHistory: updatedNarrativeHistory,
-    });
-  });
+      event,
+      autoSaveId: randomUUID(),
+    },
+    postgresActionCommitPort,
+  );
 
   // Nettoyage des auto-saves anciennes (hors transaction, non critique)
   pruneAutoSaves(sessionId, 10).catch(() => {});
@@ -261,3 +228,4 @@ export async function getManualSaves() {
     savedAt: s.savedAt,
   }));
 }
+

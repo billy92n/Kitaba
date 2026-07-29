@@ -15,6 +15,7 @@ import {
   SaveGameResponse,
   SubmitActionResponse,
 } from "@workspace/api-zod";
+import { WorldVersionConflictError } from "../services/actionCommit.js";
 
 const service = vi.hoisted(() => ({
   startNewGame: vi.fn(),
@@ -137,6 +138,25 @@ describe("contrats HTTP du jeu", () => {
     ).toContain("bloqué");
   });
 
+  it("retourne un conflit métier explicite si la version du monde a changé", async () => {
+    service.processPlayerAction.mockRejectedValue(
+      new WorldVersionConflictError("session-1", 3),
+    );
+
+    const response = await request("/api/game/action", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: "session-1",
+        playerInput: "avancer",
+      }),
+    });
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: "WORLD_VERSION_CONFLICT" },
+    });
+  });
+
   it("retourne les métadonnées stables d'une sauvegarde manuelle", async () => {
     service.saveGame.mockResolvedValue({
       saveId: "save-1",
@@ -191,3 +211,4 @@ describe("contrats HTTP du jeu", () => {
     expect(service.processPlayerAction).not.toHaveBeenCalled();
   });
 });
+

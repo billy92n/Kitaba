@@ -74,6 +74,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -155,6 +157,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     NotFound:
       description: Requested game resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: World version changed before the action could be committed
       content:
         application/json:
           schema:
@@ -346,3 +354,4 @@ components:
             $ref: "#/components/schemas/SaveInfo"
       required:
         - saves
+

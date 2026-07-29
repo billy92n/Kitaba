@@ -4,12 +4,12 @@
 import type { ActionType } from "./actions.js";
 import type { WorldTime } from "./world.js";
 
-// Résultat observable d'une action (faits, pas narration)
+// Projection d'un événement réel pour un observateur donné (faits, pas narration).
 export interface ActionOutcome {
   actionType: ActionType;
   success: boolean;
   targetName: string | null;
-  observableFacts: string[]; // ce que l'acteur peut constater du résultat
+  observableFacts: string[];
 }
 
 // Faits perceptibles par l'entité contrôlée à l'instant T, après résolution de l'action.
@@ -28,5 +28,6 @@ export interface PerceptibleFacts {
   inventoryObjects: Array<{ name: string; description: string }>;
   worldTime: WorldTime;
   entityStats: { hunger: number; fatigue: number; health: number } | null;
-  actionOutcome: ActionOutcome;
+  actionOutcome: ActionOutcome | null;
 }
+

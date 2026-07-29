@@ -32,8 +32,10 @@ export const kitabaEventsTable = pgTable("kitaba_events", {
   locationId: text("location_id").notNull(),
   targetId: text("target_id"),
   description: text("description").notNull(),
-  consequences: jsonb("consequences").notNull(), // string[]
-  occurredAt: jsonb("occurred_at").notNull(),    // WorldTime
+  // Enveloppe JSONB : changements réels + données d'observation typées.
+  // Les anciennes lignes string[] restent lisibles sans migration SQL.
+  consequences: jsonb("consequences").notNull(),
+  occurredAt: jsonb("occurred_at").notNull(), // WorldTime
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -46,7 +48,7 @@ export const kitabaEventsTable = pgTable("kitaba_events", {
 export const kitabaSavesTable = pgTable("kitaba_saves", {
   id: text("id").primaryKey(),
   sessionId: text("session_id").notNull(),
-  parentSessionId: text("parent_session_id"),    // session dont cette save est issue
+  parentSessionId: text("parent_session_id"), // session dont cette save est issue
   saveType: text("save_type").notNull().default("manual"), // "auto" | "manual"
   saveName: text("save_name").notNull(),
   controlledEntityId: text("controlled_entity_id").notNull(),
@@ -58,7 +60,8 @@ export const kitabaSavesTable = pgTable("kitaba_saves", {
 
 // ─── Schémas Zod dérivés ────────────────────────────────────────────────────────
 
-export const insertKitabaSessionSchema = createInsertSchema(kitabaSessionsTable);
+export const insertKitabaSessionSchema =
+  createInsertSchema(kitabaSessionsTable);
 export const insertKitabaEventSchema = createInsertSchema(kitabaEventsTable);
 export const insertKitabaSaveSchema = createInsertSchema(kitabaSavesTable);
 
@@ -68,3 +71,4 @@ export type KitabaEvent = typeof kitabaEventsTable.$inferSelect;
 export type InsertKitabaEvent = z.infer<typeof insertKitabaEventSchema>;
 export type KitabaSave = typeof kitabaSavesTable.$inferSelect;
 export type InsertKitabaSave = z.infer<typeof insertKitabaSaveSchema>;
+

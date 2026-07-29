@@ -8,7 +8,7 @@ vi.mock("@workspace/db", () => ({
   kitabaEventsTable: {},
   kitabaSavesTable: {},
 }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn() }));
+vi.mock("drizzle-orm", () => ({ and: vi.fn(), eq: vi.fn() }));
 
 const { appendNarrativeEntry, bindEventToSession } =
   await import("../services/gameService.js");
@@ -32,6 +32,9 @@ describe("immutabilité du service", () => {
         hour: 9,
         minute: 0,
       },
+      status: "REJECTED",
+      requestedTargetName: "marteau",
+      observations: [{ audience: "ACTOR", text: "Action non implémentée." }],
     };
     Object.freeze(event);
     const persisted = bindEventToSession(event, "session-1");
@@ -60,3 +63,4 @@ describe("immutabilité du service", () => {
     expect(history).toEqual([previous]);
   });
 });
+

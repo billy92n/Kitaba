@@ -1,5 +1,6 @@
 // Construit une vue filtrée pour un observateur explicite.
 
+import type { GameEvent } from "../domain/events.js";
 import type { ActionOutcome, PerceptibleFacts } from "../domain/knowledge.js";
 import type { EntityId, WorldState } from "../domain/world.js";
 
@@ -10,10 +11,42 @@ export type PerceptionResult =
   | { success: true; facts: PerceptibleFacts }
   | { success: false; code: PerceptionFailureCode; reason: string };
 
+export function resolveObservedAction(
+  state: WorldState,
+  observerId: EntityId,
+  event: GameEvent,
+): ActionOutcome | null {
+  const observer = state.entities[observerId];
+  if (!observer) return null;
+
+  const observableFacts = event.observations.flatMap((observation) => {
+    if (observation.audience === "PUBLIC") return [observation.text];
+    if (observation.audience === "ACTOR" && observerId === event.actorId) {
+      return [observation.text];
+    }
+    if (
+      observation.audience === "LOCATION" &&
+      observerId !== event.actorId &&
+      observer.locationId === event.locationId
+    ) {
+      return [observation.text];
+    }
+    return [];
+  });
+
+  if (observableFacts.length === 0) return null;
+  return {
+    actionType: event.actionType,
+    success: event.status === "APPLIED",
+    targetName: observerId === event.actorId ? event.requestedTargetName : null,
+    observableFacts,
+  };
+}
+
 export function buildPerceptibleFacts(
   state: WorldState,
   observerId: EntityId,
-  outcome: ActionOutcome,
+  event: GameEvent,
 ): PerceptionResult {
   const observer = state.entities[observerId];
   if (!observer) {
@@ -79,7 +112,8 @@ export function buildPerceptibleFacts(
       inventoryObjects,
       worldTime: state.time,
       entityStats,
-      actionOutcome: outcome,
+      actionOutcome: resolveObservedAction(state, observerId, event),
     },
   };
 }
+

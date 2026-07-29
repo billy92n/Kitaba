@@ -100,6 +100,7 @@ describe("actionResolver", () => {
 
     // L'examine réussit toujours côté validator
     expect(result.newWorldState.worldVersion).toBe(state.worldVersion + 1);
-    expect(result.actionOutcome.observableFacts.length).toBeGreaterThan(0);
+    expect(result.event.observations.length).toBeGreaterThan(0);
   });
 });
+

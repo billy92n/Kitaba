@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StructuredAction } from "../domain/actions.js";
+import type { GameEvent } from "../domain/events.js";
 import { resolveAction } from "../engine/actionResolver.js";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
@@ -111,14 +112,23 @@ describe("moteur multi-acteur", () => {
 
   it("construit la perception pour l'observateur explicite", () => {
     const state = createInitialWorldState("Yara");
-    const outcome = {
-      actionType: "examine" as const,
-      success: true,
-      targetName: null,
-      observableFacts: [],
+    const event: GameEvent = {
+      id: "event-perception",
+      sessionId: "session",
+      worldVersion: 1,
+      actionType: "examine",
+      actorId: "player",
+      locationId: "place_centrale",
+      targetId: null,
+      description: "inspection",
+      consequences: [],
+      occurredAt: state.time,
+      status: "APPLIED",
+      requestedTargetName: null,
+      observations: [{ audience: "ACTOR", text: "inspection privée" }],
     };
-    const playerPerception = buildPerceptibleFacts(state, "player", outcome);
-    const tariqPerception = buildPerceptibleFacts(state, "tariq", outcome);
+    const playerPerception = buildPerceptibleFacts(state, "player", event);
+    const tariqPerception = buildPerceptibleFacts(state, "tariq", event);
     expect(playerPerception.success).toBe(true);
     expect(tariqPerception.success).toBe(true);
     if (!playerPerception.success || !tariqPerception.success) return;
@@ -170,6 +180,9 @@ describe("moteur multi-acteur", () => {
       ...firstResult.newWorldState,
       controlledEntityId: "oumou",
     });
-    expect(secondResult.actionOutcome).toEqual(firstResult.actionOutcome);
+    expect(secondResult.event.observations).toEqual(
+      firstResult.event.observations,
+    );
   });
 });
+

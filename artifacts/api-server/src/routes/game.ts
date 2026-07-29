@@ -13,10 +13,15 @@ import {
   loadSavedGame,
   getManualSaves,
 } from "../services/gameService.js";
+import { WorldVersionConflictError } from "../services/actionCommit.js";
 
 const router = Router();
 
-function parseBody<T>(schema: ZodType<T>, req: Request, res: Response): T | undefined {
+function parseBody<T>(
+  schema: ZodType<T>,
+  req: Request,
+  res: Response,
+): T | undefined {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Corps de requête invalide." });
@@ -41,7 +46,11 @@ router.post("/game/new", async (req: Request, res: Response) => {
 
 router.post("/game/action", async (req: Request, res: Response) => {
   const body = parseBody(SubmitActionBody, req, res);
-  if (!body || body.sessionId.trim().length === 0 || body.playerInput.trim().length === 0) {
+  if (
+    !body ||
+    body.sessionId.trim().length === 0 ||
+    body.playerInput.trim().length === 0
+  ) {
     if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
@@ -53,6 +62,10 @@ router.post("/game/action", async (req: Request, res: Response) => {
     }
     res.json({ sessionId: body.sessionId, ...result });
   } catch (err) {
+    if (err instanceof WorldVersionConflictError) {
+      res.status(409).json({ error: err.code });
+      return;
+    }
     req.log.error({ err }, "Erreur game/action");
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
@@ -60,7 +73,11 @@ router.post("/game/action", async (req: Request, res: Response) => {
 
 router.post("/game/save", async (req: Request, res: Response) => {
   const body = parseBody(SaveGameBody, req, res);
-  if (!body || body.sessionId.trim().length === 0 || body.saveName.trim().length === 0) {
+  if (
+    !body ||
+    body.sessionId.trim().length === 0 ||
+    body.saveName.trim().length === 0
+  ) {
     if (body) res.status(400).json({ error: "Corps de requête invalide." });
     return;
   }
@@ -106,3 +123,4 @@ router.get("/game/saves", async (req: Request, res: Response) => {
 });
 
 export default router;
+
