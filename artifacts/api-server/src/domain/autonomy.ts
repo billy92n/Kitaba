@@ -190,7 +190,8 @@ export function resolveAutonomousActionMetadata(
     value.nextCommitmentTurns < 0 ||
     value.nextCommitmentTurns > MAX_COMMITMENT_TURNS ||
     (value.targetId !== undefined &&
-      (typeof value.targetId !== "string" || value.targetId.length === 0)) ||
+      (typeof value.targetId !== "string" ||
+        value.targetId.trim().length === 0)) ||
     (value.previousLocationId !== undefined &&
       (typeof value.previousLocationId !== "string" ||
         value.previousLocationId.length === 0))
