@@ -103,4 +103,3 @@ describe("actionResolver", () => {
     expect(result.event.observations.length).toBeGreaterThan(0);
   });
 });
-

@@ -123,4 +123,3 @@ router.get("/game/saves", async (req: Request, res: Response) => {
 });
 
 export default router;
-

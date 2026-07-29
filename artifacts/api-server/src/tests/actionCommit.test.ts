@@ -156,4 +156,3 @@ describe("contrôle de concurrence optimiste", () => {
     });
   });
 });
-

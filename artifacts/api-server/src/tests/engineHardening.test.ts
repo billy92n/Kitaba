@@ -727,4 +727,3 @@ describe("perception multi-observateur", () => {
     });
   });
 });
-
