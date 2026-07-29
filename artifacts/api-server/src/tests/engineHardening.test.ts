@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StructuredAction } from "../domain/actions.js";
-import type { WorldState } from "../domain/world.js";
+import type { WorldTime } from "../domain/world.js";
 import {
   resolveAction,
   type ResolutionDependencies,
@@ -10,7 +10,7 @@ import {
   advanceTime,
   applyPassiveDecay,
   applyTimeAndDecay,
-  getTimeCost,
+  getTimeCostMinutes,
 } from "../engine/timeEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
 
@@ -34,7 +34,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe("contrats du moteur", () => {
-  it("est entièrement déterministe lorsque les dépendances sont identiques", () => {
+  it("est entiÃ¨rement dÃ©terministe lorsque les dÃ©pendances sont identiques", () => {
     const first = createInitialWorldState("Yara");
     const second = createInitialWorldState("Yara");
     expect(
@@ -44,7 +44,7 @@ describe("contrats du moteur", () => {
     );
   });
 
-  it("code explicitement acteur et lieu absents sans modifier l'état", () => {
+  it("code explicitement acteur et lieu absents sans modifier l'Ã©tat", () => {
     const state = createInitialWorldState("Yara");
     const unknown = resolveAction(
       state,
@@ -82,7 +82,7 @@ describe("contrats du moteur", () => {
     });
   });
 
-  it("définit l'événement move au lieu et à l'heure de départ", () => {
+  it("dÃ©finit l'Ã©vÃ©nement move au lieu et Ã  l'heure de dÃ©part", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(
       state,
@@ -106,10 +106,8 @@ describe("contrats du moteur", () => {
     ["take", "minerai"],
     ["examine", "forge"],
     ["sleep", null],
-    ["give", "Amir"],
-    ["use", "marteau"],
   ] satisfies Array<[StructuredAction["actionType"], string | null]>)(
-    "ne mute jamais l'entrée pour l'action réussie %s",
+    "ne mute jamais l'entrÃ©e pour l'action rÃ©ussie %s",
     (actionType, targetName) => {
       const mutable = createInitialWorldState("Yara");
       const snapshot = structuredClone(mutable);
@@ -127,7 +125,7 @@ describe("contrats du moteur", () => {
     },
   );
 
-  it("ne mute jamais l'entrée pour eat", () => {
+  it("ne mute jamais l'entrÃ©e pour eat", () => {
     const mutable = createInitialWorldState("Yara");
     mutable.entities.tariq = { ...mutable.entities.tariq, hunger: 40 };
     const snapshot = structuredClone(mutable);
@@ -149,8 +147,9 @@ describe("contrats du moteur", () => {
     ["take", "objet absent"],
     ["eat", "objet absent"],
     ["give", null],
+    ["use", "marteau"],
   ] satisfies Array<[StructuredAction["actionType"], string | null]>)(
-    "la branche refusée %s conserve état, version et temps",
+    "la branche refusÃ©e %s conserve Ã©tat, version et temps",
     (actionType, targetName) => {
       const state = deepFreeze(createInitialWorldState("Yara"));
       const result = resolveAction(
@@ -168,7 +167,7 @@ describe("contrats du moteur", () => {
     },
   );
 
-  it("applique l'horloge mondiale et le déclin au seul acteur", () => {
+  it("applique l'horloge mondiale et le dÃ©clin au seul acteur", () => {
     const state = createInitialWorldState("Yara");
     state.entities.hamid = { ...state.entities.hamid, hunger: 50, fatigue: 50 };
     state.entities.amir = { ...state.entities.amir, hunger: 50, fatigue: 50 };
@@ -178,21 +177,21 @@ describe("contrats du moteur", () => {
       action("examine", "forge"),
       deterministic,
     );
-    expect(result.newWorldState.time.hour).toBe(9);
+    expect(result.newWorldState.time).toMatchObject({ hour: 9, minute: 6 });
     expect(result.newWorldState.entities.hamid.hunger).toBe(49.75);
     expect(result.newWorldState.entities.amir).toBe(state.entities.amir);
     expect(result.newWorldState.entities.player).toBe(state.entities.player);
   });
 
-  it("couvre les frontières calendaires et les stats optionnelles", () => {
+  it("couvre les frontiÃ¨res calendaires et les stats optionnelles", () => {
     expect(
-      advanceTime({ year: 2, season: "hiver", day: 30, hour: 23 }, 2),
-    ).toEqual({ year: 3, season: "printemps", day: 1, hour: 1 });
+      advanceTime({ year: 2, season: "hiver", day: 30, hour: 23 }, 120),
+    ).toEqual({ year: 3, season: "printemps", day: 1, hour: 1, minute: 0 });
     expect(
-      advanceTime({ year: 2, season: "été", day: 30, hour: 23 }, 2),
-    ).toEqual({ year: 2, season: "automne", day: 1, hour: 1 });
+      advanceTime({ year: 2, season: "Ã©tÃ©", day: 30, hour: 23 }, 120),
+    ).toEqual({ year: 2, season: "automne", day: 1, hour: 1, minute: 0 });
     const actorWithoutStats = createInitialWorldState("Yara").entities.hamid;
-    expect(applyPassiveDecay(actorWithoutStats, 2)).toBe(actorWithoutStats);
+    expect(applyPassiveDecay(actorWithoutStats, 120)).toBe(actorWithoutStats);
     expect(
       applyPassiveDecay(
         {
@@ -200,17 +199,17 @@ describe("contrats du moteur", () => {
           hunger: 1,
           fatigue: undefined,
         },
-        2,
+        120,
       ),
     ).toMatchObject({ hunger: 0, fatigue: undefined });
-    expect(getTimeCost("unknown")).toBe(0);
+    expect(getTimeCostMinutes("unknown")).toBe(0);
     const state = createInitialWorldState("Yara");
     expect(applyTimeAndDecay(state, state.entities.hamid, "unknown")).toBe(
       state,
     );
   });
 
-  it("applique take à la cible validée même si une cible similaire existe", () => {
+  it("applique take Ã  la cible validÃ©e mÃªme si une cible similaire existe", () => {
     const state = createInitialWorldState("Yara");
     state.objects.minerai_fer_fin = {
       ...state.objects.minerai_fer,
@@ -239,7 +238,75 @@ describe("contrats du moteur", () => {
     );
   });
 
-  it("préserve la règle historique permettant de prendre un objet porté par autrui", () => {
+  it("refuse une cible ambiguÃ« sans divulguer ses identifiants au narrateur", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.alia = { ...state.entities.leila, id: "alia", name: "Ali" };
+    state.entities.alim = { ...state.entities.leila, id: "alim", name: "Alim" };
+    const result = resolveAction(
+      state,
+      "tariq",
+      action("speak", "Al"),
+      deterministic,
+    );
+    expect(result).toMatchObject({
+      success: false,
+      failureCode: "TARGET_AMBIGUOUS",
+      newWorldState: state,
+    });
+    expect(JSON.stringify(result.actionOutcome)).not.toContain("alia");
+    expect(JSON.stringify(result.actionOutcome)).not.toContain("alim");
+  });
+
+  it("accumule exactement les durÃ©es courtes et les fractions hÃ©ritÃ©es", () => {
+    let tenth: WorldTime = {
+      year: 1,
+      season: "printemps",
+      day: 1,
+      hour: 8,
+    };
+    for (let index = 0; index < 10; index += 1) {
+      tenth = advanceTime(tenth, 6);
+    }
+    expect(tenth).toEqual({
+      year: 1,
+      season: "printemps",
+      day: 1,
+      hour: 9,
+      minute: 0,
+    });
+    expect(
+      advanceTime(
+        advanceTime({ year: 1, season: "printemps", day: 1, hour: 8 }, 15),
+        15,
+      ),
+    ).toMatchObject({ hour: 8, minute: 30 });
+    expect(
+      advanceTime({ year: 1, season: "printemps", day: 1, hour: 8.25 }, 15),
+    ).toMatchObject({ hour: 8, minute: 30 });
+  });
+
+  it.each(["give", "use"] as const)(
+    "refuse %s sans version, temps ni Ã©tat fictifs",
+    (actionType) => {
+      const state = createInitialWorldState("Yara");
+      const result = resolveAction(
+        state,
+        "hamid",
+        action(actionType, "marteau"),
+        deterministic,
+      );
+      expect(result).toMatchObject({
+        success: false,
+        failureCode: "ACTION_NOT_IMPLEMENTED",
+        newWorldState: state,
+        event: { worldVersion: 0, consequences: [] },
+      });
+      expect(result.newWorldState).toBe(state);
+      expect(result.newWorldState.time).toBe(state.time);
+    },
+  );
+
+  it("prÃ©serve la rÃ¨gle historique permettant de prendre un objet portÃ© par autrui", () => {
     const state = createInitialWorldState("Yara");
     state.entities.leila = {
       ...state.entities.leila,
@@ -264,9 +331,9 @@ describe("contrats du moteur", () => {
     ["move", "forge", "ACTION_NOT_ALLOWED"],
     ["speak", null, "TARGET_NOT_FOUND"],
     ["take", "minerai", "ACTION_NOT_ALLOWED"],
-    ["eat", "marteau", "ACTION_NOT_ALLOWED"],
+    ["eat", "marteau", "OBJECT_NOT_EDIBLE"],
   ] satisfies Array<[StructuredAction["actionType"], string | null, string]>)(
-    "catégorise le refus %s/%s",
+    "catÃ©gorise le refus %s/%s",
     (actionType, targetName, failureCode) => {
       const state = createInitialWorldState("Yara");
       if (actionType === "take") {
@@ -290,7 +357,7 @@ describe("contrats du moteur", () => {
     },
   );
 
-  it("refuse un lieu existant mais non connecté", () => {
+  it("refuse un lieu existant mais non connectÃ©", () => {
     const result = resolveAction(
       createInitialWorldState("Yara"),
       "hamid",
@@ -303,7 +370,7 @@ describe("contrats du moteur", () => {
     });
   });
 
-  it("ne dépend jamais de controlledEntityId, événement compris", () => {
+  it("ne dÃ©pend jamais de controlledEntityId, Ã©vÃ©nement compris", () => {
     const first = createInitialWorldState("Yara");
     const second = {
       ...createInitialWorldState("Yara"),
@@ -339,7 +406,7 @@ describe("perception multi-observateur", () => {
     observableFacts: [],
   };
 
-  it("retourne des erreurs typées pour observateur ou lieu absent", () => {
+  it("retourne des erreurs typÃ©es pour observateur ou lieu absent", () => {
     const state = createInitialWorldState("Yara");
     expect(buildPerceptibleFacts(state, "absent", outcome)).toMatchObject({
       success: false,
@@ -366,11 +433,11 @@ describe("perception multi-observateur", () => {
     expect(result.facts.inventoryObjects.map((object) => object.name)).toEqual([
       "miche de pain",
     ]);
-    expect(JSON.stringify(result.facts)).not.toContain("panier de légumes");
+    expect(JSON.stringify(result.facts)).not.toContain("panier de lÃ©gumes");
     expect(JSON.stringify(result.facts)).not.toContain("Hamid");
   });
 
-  it("ignore les identifiants incohérents dans les listes perceptibles", () => {
+  it("ignore les identifiants incohÃ©rents dans les listes perceptibles", () => {
     const state = createInitialWorldState("Yara");
     state.locations.place_centrale = {
       ...state.locations.place_centrale,
@@ -392,3 +459,4 @@ describe("perception multi-observateur", () => {
     });
   });
 });
+
