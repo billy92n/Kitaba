@@ -341,6 +341,19 @@ describe("candidate credibility and utility", () => {
         state,
         "tariq",
         {
+          actionType: "move",
+          targetName: "place centrale",
+          details: "",
+          rawInput: "",
+        },
+        "",
+      ),
+    ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
           actionType: "examine",
           targetName: null,
           details: "",
@@ -566,6 +579,53 @@ describe("candidate credibility and utility", () => {
     expect(changed).toEqual(before);
   });
 
+  it("refuses an object assigned to a colocated owner without inventory index", () => {
+    const initial = createInitialWorldState("Yara");
+    const input = inputFor(initial, "tariq");
+    const bread = input.candidates.find(
+      (candidate) => candidate.candidateKey === "examine:pain_taverne",
+    );
+    expect(bread).toBeDefined();
+    if (!bread) return;
+    const decision = decideAutonomousAction(
+      { ...input, candidates: [bread] },
+      { seed: "ghost-owner" },
+    );
+    expect(decision.success).toBe(true);
+    if (!decision.success) return;
+
+    const changed = structuredClone(initial);
+    changed.objects.pain_taverne = {
+      ...changed.objects.pain_taverne,
+      ownerId: "leila",
+      locationId: null,
+    };
+    expect(changed.entities.leila.inventory).not.toContain("pain_taverne");
+    const before = structuredClone(changed);
+    const resolved = resolveAction(changed, "tariq", decision.action, {
+      createEventId: () => "ghost-owner",
+    });
+    expect(resolved).toMatchObject({
+      success: false,
+      failureCode: "TARGET_NOT_FOUND",
+      newWorldState: changed,
+    });
+    expect(changed).toEqual(before);
+    expect(
+      validateAction(
+        changed,
+        "tariq",
+        {
+          actionType: "take",
+          targetName: "pain",
+          details: "",
+          rawInput: "",
+        },
+        "pain_taverne",
+      ),
+    ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
+  });
+
   it("never persists malformed autonomous metadata", () => {
     const state = createInitialWorldState("Yara");
     expect(
@@ -697,34 +757,38 @@ describe("controlled determinism and anti-oscillation", () => {
     });
   });
 
-  it("rejects an unbound targeted candidate with a typed failure", () => {
-    const input = inputFor(createInitialWorldState("Yara"), "player");
-    expect(
-      decideAutonomousAction(
-        {
-          ...input,
-          candidates: [
-            {
-              candidateKey: "move:unbound",
-              action: {
-                actionType: "move",
-                targetName: "somewhere",
-                details: "",
-                rawInput: "",
+  it.each([undefined, "", "   "])(
+    "rejects an unbound targeted candidate with target %j",
+    (targetId) => {
+      const input = inputFor(createInitialWorldState("Yara"), "player");
+      expect(
+        decideAutonomousAction(
+          {
+            ...input,
+            candidates: [
+              {
+                candidateKey: "move:unbound",
+                action: {
+                  actionType: "move",
+                  targetName: "somewhere",
+                  details: "",
+                  rawInput: "",
+                },
+                ...(targetId === undefined ? {} : { targetId }),
+                source: "CONNECTED_LOCATION",
+                eligibility: { eligible: true },
               },
-              source: "CONNECTED_LOCATION",
-              eligibility: { eligible: true },
-            },
-          ],
-        },
-        { seed: "unbound" },
-      ),
-    ).toMatchObject({
-      success: false,
-      code: "UNBOUND_TARGETED_CANDIDATE",
-      trace: { selectedCandidateKey: null },
-    });
-  });
+            ],
+          },
+          { seed: "unbound" },
+        ),
+      ).toMatchObject({
+        success: false,
+        code: "UNBOUND_TARGETED_CANDIDATE",
+        trace: { selectedCandidateKey: null },
+      });
+    },
+  );
 
   it("sorts equal-score candidate keys identically from reverse order", () => {
     const input = inputFor(createInitialWorldState("Yara"), "player");
