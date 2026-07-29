@@ -127,7 +127,16 @@ function considerationsFor(
   candidate: PreparedAutonomousCandidate,
 ): UtilityConsideration[] {
   const { traits, persistentGoal } = input.actor.profile;
-  switch (candidate.action.actionType) {
+  const actionType = candidate.action.actionType;
+  if (
+    actionType === "unknown" ||
+    actionType === "give" ||
+    actionType === "attack" ||
+    actionType === "use"
+  ) {
+    return [];
+  }
+  switch (actionType) {
     case "eat":
       return [
         {
@@ -219,11 +228,6 @@ function considerationsFor(
           weight: 2,
         },
       ];
-    case "unknown":
-    case "give":
-    case "attack":
-    case "use":
-      return [];
   }
 }
 
