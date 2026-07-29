@@ -99,7 +99,8 @@ function exactObjectAvailability(
   if (
     object.ownerId !== null &&
     object.ownerId !== actor.id &&
-    state.entities[object.ownerId]?.locationId === actor.locationId
+    state.entities[object.ownerId]?.locationId === actor.locationId &&
+    state.entities[object.ownerId]?.inventory.includes(object.id) === true
   ) {
     return { object, availability: "OTHER_INVENTORY" };
   }
@@ -194,14 +195,15 @@ export function validateAction(
 
   switch (action.actionType) {
     case "move": {
-      const target = resolvedTargetId
-        ? state.locations[resolvedTargetId]
-          ? {
-              status: "FOUND" as const,
-              target: state.locations[resolvedTargetId],
-            }
-          : { status: "MISSING" as const }
-        : findLocationByQuery(state, action.targetName);
+      const target =
+        resolvedTargetId !== undefined
+          ? state.locations[resolvedTargetId]
+            ? {
+                status: "FOUND" as const,
+                target: state.locations[resolvedTargetId],
+              }
+            : { status: "MISSING" as const }
+          : findLocationByQuery(state, action.targetName);
       if (target.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
@@ -235,22 +237,24 @@ export function validateAction(
       if (!action.targetName) {
         return fail("TARGET_NOT_FOUND", "À qui voulez-vous parler ?", actor);
       }
-      const exactTarget = resolvedTargetId
-        ? state.entities[resolvedTargetId]
-        : undefined;
-      const target = resolvedTargetId
-        ? exactTarget &&
-          exactTarget.id !== actorId &&
-          exactTarget.locationId === actor.locationId &&
-          location.presentEntities.includes(exactTarget.id)
-          ? { status: "FOUND" as const, target: exactTarget }
-          : { status: "MISSING" as const }
-        : findEntityAtLocation(
-            state,
-            actorId,
-            actor.locationId,
-            action.targetName,
-          );
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? state.entities[resolvedTargetId]
+          : undefined;
+      const target =
+        resolvedTargetId !== undefined
+          ? exactTarget &&
+            exactTarget.id !== actorId &&
+            exactTarget.locationId === actor.locationId &&
+            location.presentEntities.includes(exactTarget.id)
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : findEntityAtLocation(
+              state,
+              actorId,
+              actor.locationId,
+              action.targetName,
+            );
       if (target.status === "AMBIGUOUS") {
         return ambiguous(actor, target.candidateIds);
       }
@@ -266,14 +270,16 @@ export function validateAction(
           );
     }
     case "take": {
-      const exactTarget = resolvedTargetId
-        ? exactObjectAvailability(state, actor, resolvedTargetId)
-        : null;
-      const resolved = resolvedTargetId
-        ? exactTarget
-          ? { status: "FOUND" as const, target: exactTarget }
-          : { status: "MISSING" as const }
-        : resolveObjectInActorContext(state, actorId, action.targetName);
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactObjectAvailability(state, actor, resolvedTargetId)
+          : null;
+      const resolved =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : resolveObjectInActorContext(state, actorId, action.targetName);
       if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
@@ -302,14 +308,16 @@ export function validateAction(
       };
     }
     case "examine": {
-      const exactTarget = resolvedTargetId
-        ? exactInspectable(state, actor, resolvedTargetId)
-        : null;
-      const target = resolvedTargetId
-        ? exactTarget
-          ? { status: "FOUND" as const, target: exactTarget }
-          : { status: "MISSING" as const }
-        : findInspectable(state, actorId, action.targetName);
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactInspectable(state, actor, resolvedTargetId)
+          : null;
+      const target =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : findInspectable(state, actorId, action.targetName);
       if (target.status === "AMBIGUOUS") {
         return ambiguous(actor, target.candidateIds);
       }
@@ -330,14 +338,16 @@ export function validateAction(
       };
     }
     case "eat": {
-      const exactTarget = resolvedTargetId
-        ? exactObjectAvailability(state, actor, resolvedTargetId)
-        : null;
-      const resolved = resolvedTargetId
-        ? exactTarget
-          ? { status: "FOUND" as const, target: exactTarget }
-          : { status: "MISSING" as const }
-        : resolveObjectInActorContext(state, actorId, action.targetName);
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactObjectAvailability(state, actor, resolvedTargetId)
+          : null;
+      const resolved =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : resolveObjectInActorContext(state, actorId, action.targetName);
       if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
