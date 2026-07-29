@@ -1,4 +1,4 @@
-// Applique uniquement le contexte rÃ©solu par la validation : aucune cible n'est recherchÃ©e ici.
+// Applique uniquement le contexte résolu par la validation : aucune cible n'est recherchée ici.
 
 import type { WorldState } from "../domain/world.js";
 import type { Entity } from "../domain/entities.js";
@@ -48,7 +48,7 @@ export function applyConsequences(
         },
         observableFacts: [`Vous entrez dans ${target.name}.`],
         consequences: [
-          `entity:${actor.id}:locationId:${source.id}â†’${target.id}`,
+          `entity:${actor.id}:locationId:${source.id}→${target.id}`,
         ],
         targetId: target.id,
         actorAfter: { ...actor, locationId: target.id },
@@ -57,7 +57,7 @@ export function applyConsequences(
     case "SPEAK":
       return {
         newWorldState: state,
-        observableFacts: [`${context.target.name} vous rÃ©pond briÃ¨vement.`],
+        observableFacts: [`${context.target.name} vous répond brièvement.`],
         consequences: [],
         targetId: context.target.id,
         actorAfter: actor,
@@ -114,7 +114,7 @@ export function applyConsequences(
         },
         observableFacts: [`${object.name} est maintenant dans vos affaires.`],
         consequences: [
-          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}â†’${actor.id}`,
+          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}→${actor.id}`,
         ],
         targetId: object.id,
         actorAfter: entities[actor.id],
@@ -177,7 +177,7 @@ export function applyConsequences(
           "Vous dormez plusieurs heures. Votre fatigue se dissipe.",
         ],
         consequences: [
-          `entity:${actor.id}:fatigue:${fatigueBefore}â†’${fatigueAfter}`,
+          `entity:${actor.id}:fatigue:${fatigueBefore}→${fatigueAfter}`,
         ],
         targetId: null,
         actorAfter: { ...actor, fatigue: fatigueAfter },
