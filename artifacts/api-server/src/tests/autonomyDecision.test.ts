@@ -8,6 +8,7 @@ import {
 } from "../engine/autonomyContext.js";
 import { decideAutonomousAction } from "../engine/autonomyDecision.js";
 import { resolveAction } from "../engine/actionResolver.js";
+import { validateAction } from "../engine/actionValidator.js";
 import { advanceTime } from "../engine/timeEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
 
@@ -87,6 +88,42 @@ describe("autonomous decision context isolation", () => {
     expect(JSON.stringify(decision)).not.toContain("gemme secrète");
   });
 
+  it("is not influenced by a hidden remote location with the same name", () => {
+    const state = createInitialWorldState("Yara");
+    state.locations.hidden_farm = {
+      id: "hidden_farm",
+      name: state.locations.ferme_oumou.name,
+      description: "A remote homonym that the actor cannot perceive.",
+      connectedLocations: [],
+      presentEntities: [],
+      presentObjects: [],
+    };
+
+    const input = inputFor(state, "player");
+    const localFarm = input.candidates.find(
+      (candidate) => candidate.candidateKey === "move:ferme_oumou",
+    );
+    expect(localFarm?.eligibility).toEqual({ eligible: true });
+    expect(JSON.stringify(input)).not.toContain("hidden_farm");
+    const decision = decideAutonomousAction(
+      { ...input, candidates: localFarm ? [localFarm] : [] },
+      { seed: "local-id" },
+    );
+    expect(decision).toMatchObject({
+      success: true,
+      trace: { selectedCandidateKey: "move:ferme_oumou" },
+    });
+    if (!decision.success) return;
+    expect(
+      resolveAction(state, "player", decision.action, {
+        createEventId: () => "local-id",
+      }),
+    ).toMatchObject({
+      success: true,
+      event: { targetId: "ferme_oumou" },
+    });
+  });
+
   it("does not enumerate an object carried by another actor", () => {
     const state = createInitialWorldState("Yara");
     state.entities.oumou.locationId = "taverne_du_loup";
@@ -148,25 +185,207 @@ describe("autonomous decision context isolation", () => {
 
   it("ignores inconsistent local references without scanning the world", () => {
     const state = createInitialWorldState("Yara");
+    state.entities.hamid.locationId = "forge_hamid";
+    state.objects.minerai_fer.locationId = "forge_hamid";
+    state.objects.minerai_fer.ownerId = null;
     state.locations.taverne_du_loup.connectedLocations.push(
       "missing-location",
       "place_centrale",
     );
-    state.locations.taverne_du_loup.presentEntities.push("missing-entity");
-    state.locations.taverne_du_loup.presentObjects.push("missing-object");
-    state.entities.tariq.inventory.push("missing-inventory-object");
+    state.locations.taverne_du_loup.presentEntities.push(
+      "missing-entity",
+      "hamid",
+    );
+    state.locations.taverne_du_loup.presentObjects.push(
+      "missing-object",
+      "minerai_fer",
+    );
+    state.entities.tariq.inventory.push(
+      "missing-inventory-object",
+      "panier_legumes",
+    );
 
     const input = inputFor(state, "tariq");
     expect(JSON.stringify(input.candidates)).not.toContain("missing-");
+    expect(JSON.stringify(input.candidates)).not.toContain("hamid");
+    expect(JSON.stringify(input.candidates)).not.toContain("minerai_fer");
+    expect(JSON.stringify(input.candidates)).not.toContain("panier_legumes");
     expect(
       input.candidates.filter(
         (candidate) => candidate.candidateKey === "move:place_centrale",
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 });
 
 describe("candidate credibility and utility", () => {
+  it("validates id-bound targets only through canonical local facts", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.oumou = {
+      ...state.entities.oumou,
+      locationId: "taverne_du_loup",
+    };
+    state.locations.taverne_du_loup.presentEntities.push("oumou");
+
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
+          actionType: "take",
+          targetName: "panier",
+          details: "",
+          rawInput: "",
+        },
+        "panier_legumes",
+      ),
+    ).toMatchObject({
+      possible: true,
+      context: { availability: "OTHER_INVENTORY" },
+    });
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
+          actionType: "examine",
+          targetName: "Leila",
+          details: "",
+          rawInput: "",
+        },
+        "leila",
+      ),
+    ).toMatchObject({
+      possible: true,
+      context: { target: { kind: "ENTITY", id: "leila" } },
+    });
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
+          actionType: "examine",
+          targetName: "taverne",
+          details: "",
+          rawInput: "",
+        },
+        "taverne_du_loup",
+      ),
+    ).toMatchObject({
+      possible: true,
+      context: { target: { kind: "LOCATION", id: "taverne_du_loup" } },
+    });
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
+          actionType: "examine",
+          targetName: "place",
+          details: "",
+          rawInput: "",
+        },
+        "place_centrale",
+      ),
+    ).toMatchObject({
+      possible: true,
+      context: { target: { kind: "LOCATION", id: "place_centrale" } },
+    });
+  });
+
+  it("refuses stale or physically inconsistent id-bound targets", () => {
+    const state = createInitialWorldState("Yara");
+    state.objects.false_inventory = {
+      id: "false_inventory",
+      name: "false inventory",
+      description: "",
+      locationId: null,
+      ownerId: "tariq",
+      properties: {},
+    };
+    state.objects.false_ground = {
+      id: "false_ground",
+      name: "false ground",
+      description: "",
+      locationId: "taverne_du_loup",
+      ownerId: null,
+      properties: {},
+    };
+    state.objects.remote_owner = {
+      id: "remote_owner",
+      name: "remote owner",
+      description: "",
+      locationId: null,
+      ownerId: "oumou",
+      properties: {},
+    };
+
+    const actionTypes = ["move", "speak", "take", "eat"] as const;
+    for (const actionType of actionTypes) {
+      expect(
+        validateAction(
+          state,
+          "tariq",
+          {
+            actionType,
+            targetName: "missing",
+            details: "",
+            rawInput: "",
+          },
+          "missing",
+        ),
+      ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
+    }
+    expect(
+      validateAction(
+        state,
+        "tariq",
+        {
+          actionType: "examine",
+          targetName: "missing",
+          details: "",
+          rawInput: "",
+        },
+        "missing",
+      ),
+    ).toMatchObject({ possible: true, context: { target: null } });
+
+    for (const targetId of [
+      "false_inventory",
+      "false_ground",
+      "remote_owner",
+    ]) {
+      expect(
+        validateAction(
+          state,
+          "tariq",
+          {
+            actionType: "take",
+            targetName: targetId,
+            details: "",
+            rawInput: "",
+          },
+          targetId,
+        ),
+      ).toMatchObject({ possible: false, code: "TARGET_NOT_FOUND" });
+    }
+    for (const targetId of ["tariq", "hamid", "forge_hamid"]) {
+      expect(
+        validateAction(
+          state,
+          "tariq",
+          {
+            actionType: "examine",
+            targetName: targetId,
+            details: "",
+            rawInput: "",
+          },
+          targetId,
+        ),
+      ).toMatchObject({ possible: true, context: { target: null } });
+    }
+  });
+
   it("generates candidates only from implemented verbs and visible affordances", () => {
     const input = inputFor(createInitialWorldState("Yara"), "tariq");
     const actionTypes = new Set(
@@ -244,7 +463,7 @@ describe("candidate credibility and utility", () => {
     expect(selectedKey(state, "player", "curious")).toMatch(/^(move|examine):/);
   });
 
-  it("records invalid visible drafts as exclusions instead of selecting them", () => {
+  it("keeps same-named visible targets bound to their exact ids", () => {
     const state = createInitialWorldState("Yara");
     state.objects.lantern_duplicate = {
       ...state.objects.lanterne_taverne,
@@ -256,19 +475,21 @@ describe("candidate credibility and utility", () => {
     });
     expect(decision.success).toBe(true);
     expect(
-      decision.trace.candidates.filter(
-        (candidate) =>
-          candidate.candidateKey.includes("lantern") ||
-          candidate.candidateKey.includes("lanterne"),
+      decision.trace.candidates.filter((candidate) =>
+        ["lantern_duplicate", "lanterne_taverne"].some((id) =>
+          candidate.candidateKey.endsWith(id),
+        ),
       ),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eligible: false,
-          exclusionReasons: [expect.stringContaining("TARGET_AMBIGUOUS")],
-        }),
-      ]),
-    );
+    ).toHaveLength(4);
+    expect(
+      decision.trace.candidates
+        .filter((candidate) =>
+          ["lantern_duplicate", "lanterne_taverne"].some((id) =>
+            candidate.candidateKey.endsWith(id),
+          ),
+        )
+        .every((candidate) => candidate.eligible),
+    ).toBe(true);
     if (!decision.success) return;
     const selected = decision.trace.candidates.find(
       (candidate) =>
@@ -300,6 +521,33 @@ describe("candidate credibility and utility", () => {
       success: false,
       failureCode: "TARGET_NOT_FOUND",
       newWorldState: changed,
+    });
+  });
+
+  it("never persists malformed autonomous metadata", () => {
+    const state = createInitialWorldState("Yara");
+    expect(
+      resolveAction(
+        state,
+        "tariq",
+        {
+          actionType: "sleep",
+          targetName: null,
+          details: "",
+          rawInput: "",
+          autonomy: {
+            intentKey: "",
+            nextCommitmentTurns: 11,
+            targetId: "",
+            previousLocationId: "",
+          },
+        },
+        { createEventId: () => "invalid-autonomy" },
+      ),
+    ).toMatchObject({
+      success: false,
+      failureCode: "INVALID_AUTONOMY_METADATA",
+      newWorldState: state,
     });
   });
 });
@@ -355,7 +603,7 @@ describe("controlled determinism and anti-oscillation", () => {
     expect(result.trace.tieBreak).toContain("candidateKey");
   });
 
-  it("keeps duplicate stable keys deterministic in defensive input", () => {
+  it("rejects duplicate stable keys even when their contents differ", () => {
     const input = inputFor(createInitialWorldState("Yara"), "player");
     const candidate = input.candidates.find(
       (entry) => entry.action.actionType === "move",
@@ -363,12 +611,23 @@ describe("controlled determinism and anti-oscillation", () => {
     expect(candidate).toBeDefined();
     if (!candidate) return;
     const result = decideAutonomousAction(
-      { ...input, candidates: [candidate, { ...candidate }] },
+      {
+        ...input,
+        candidates: [
+          candidate,
+          {
+            ...candidate,
+            targetId: "different-target",
+          },
+        ],
+      },
       { seed: "duplicate", maxSeedNoise: 0 },
     );
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.trace.selectedCandidateKey).toBe(candidate.candidateKey);
+    expect(result).toMatchObject({
+      success: false,
+      code: "DUPLICATE_CANDIDATE_KEY",
+      trace: { selectedCandidateKey: null },
+    });
   });
 
   it("sorts equal-score candidate keys identically from reverse order", () => {
@@ -405,6 +664,18 @@ describe("controlled determinism and anti-oscillation", () => {
             source: "INTRINSIC",
             eligibility: { eligible: true },
           },
+          {
+            candidateKey: "use:unsupported",
+            action: {
+              actionType: "use",
+              targetName: "object",
+              details: "",
+              rawInput: "",
+            },
+            targetId: "object",
+            source: "INTRINSIC",
+            eligibility: { eligible: true },
+          },
         ],
       },
       { seed: "unsupported" },
@@ -413,12 +684,12 @@ describe("controlled determinism and anti-oscillation", () => {
       success: false,
       code: "NO_ELIGIBLE_ACTION",
       trace: {
-        candidates: [
-          {
+        candidates: expect.arrayContaining([
+          expect.objectContaining({
             eligible: false,
             exclusionReasons: ["NO_SCORING_MODEL"],
-          },
-        ],
+          }),
+        ]),
       },
     });
   });
@@ -426,7 +697,29 @@ describe("controlled determinism and anti-oscillation", () => {
   it("reports no eligible action for an empty affordance set", () => {
     const input = inputFor(createInitialWorldState("Yara"), "player");
     expect(
-      decideAutonomousAction({ ...input, candidates: [] }, { seed: "empty" }),
+      decideAutonomousAction(
+        {
+          ...input,
+          candidates: [
+            {
+              candidateKey: "sleep:blocked",
+              action: {
+                actionType: "sleep",
+                targetName: null,
+                details: "",
+                rawInput: "",
+              },
+              source: "INTRINSIC",
+              eligibility: {
+                eligible: false,
+                code: "BLOCKED",
+                reason: "Blocked for coverage of a defensive adapter result.",
+              },
+            },
+          ],
+        },
+        { seed: "empty" },
+      ),
     ).toMatchObject({
       success: false,
       code: "NO_ELIGIBLE_ACTION",
@@ -437,6 +730,7 @@ describe("controlled determinism and anti-oscillation", () => {
     { maxSeedNoise: -1 },
     { inertiaBonus: 10_001 },
     { commitmentTurns: 1.5 },
+    { commitmentTurns: 11 },
   ])("rejects invalid bounded configuration %#", (invalid) => {
     const input = inputFor(createInitialWorldState("Yara"), "player");
     expect(() =>
@@ -481,6 +775,60 @@ describe("controlled determinism and anti-oscillation", () => {
 
     state.entities.tariq = { ...state.entities.tariq, hunger: 0 };
     expect(selectedKey(state, "tariq", "stable")).toBe("eat:pain_taverne");
+  });
+
+  it("penalizes an immediate A-B-A reversal for otherwise close options", () => {
+    const initial = createInitialWorldState("Yara");
+    initial.entities.player = {
+      ...initial.entities.player,
+      hunger: 100,
+      fatigue: 100,
+      autonomyProfile: profile({
+        curiosity: 20,
+        ambition: 0,
+        prudence: 100,
+      }),
+    };
+    const firstInput = inputFor(initial, "player");
+    const outward = firstInput.candidates.find(
+      (candidate) => candidate.candidateKey === "move:ferme_oumou",
+    );
+    expect(outward).toBeDefined();
+    if (!outward) return;
+    const firstDecision = decideAutonomousAction(
+      { ...firstInput, candidates: [outward] },
+      { seed: "route", maxSeedNoise: 0, commitmentTurns: 2 },
+    );
+    expect(firstDecision.success).toBe(true);
+    if (!firstDecision.success) return;
+    const moved = resolveAction(initial, "player", firstDecision.action, {
+      createEventId: () => "outward",
+    });
+    expect(moved.success).toBe(true);
+
+    const secondInput = inputFor(moved.newWorldState, "player");
+    const returnMove = secondInput.candidates.find(
+      (candidate) => candidate.candidateKey === "move:place_centrale",
+    );
+    const sleep = secondInput.candidates.find(
+      (candidate) => candidate.candidateKey === "sleep:self",
+    );
+    expect(returnMove).toBeDefined();
+    expect(sleep).toBeDefined();
+    if (!returnMove || !sleep) return;
+    const secondDecision = decideAutonomousAction(
+      { ...secondInput, candidates: [returnMove, sleep] },
+      { seed: "route", maxSeedNoise: 0, commitmentTurns: 2 },
+    );
+    expect(secondDecision).toMatchObject({
+      success: true,
+      trace: { selectedCandidateKey: "sleep:self" },
+    });
+    expect(
+      secondDecision.trace.candidates.find(
+        (candidate) => candidate.candidateKey === "move:place_centrale",
+      )?.reversalPenalty,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps every reachable score finite and bounded", () => {
@@ -548,6 +896,16 @@ describe("lazy time and compatibility", () => {
     const state = createInitialWorldState("Yara");
     delete state.time.minute;
     expect(inputFor(state, "hamid").actor.worldTime.minute).toBe(0);
+  });
+
+  it("preserves a fractional legacy world hour in the decision snapshot", () => {
+    const state = createInitialWorldState("Yara");
+    state.time.hour = 12.25;
+    delete state.time.minute;
+    expect(inputFor(state, "hamid").actor.worldTime).toMatchObject({
+      hour: 12,
+      minute: 15,
+    });
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 101, 1.5])(
