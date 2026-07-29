@@ -34,6 +34,7 @@ const checks = [
       /\bMath\.random\b/,
       /\bDate\.now\b/,
       /\brandomUUID\b/,
+      /\bObject\.values\b/,
     ],
   },
 ];
