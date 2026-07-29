@@ -1,4 +1,4 @@
-// Applique uniquement le contexte résolu par la validation : aucune cible n'est recherchée ici.
+// Applique uniquement le contexte rÃ©solu par la validation : aucune cible n'est recherchÃ©e ici.
 
 import type { WorldState } from "../domain/world.js";
 import type { Entity } from "../domain/entities.js";
@@ -48,7 +48,7 @@ export function applyConsequences(
         },
         observableFacts: [`Vous entrez dans ${target.name}.`],
         consequences: [
-          `entity:${actor.id}:locationId:${source.id}→${target.id}`,
+          `entity:${actor.id}:locationId:${source.id}â†’${target.id}`,
         ],
         targetId: target.id,
         actorAfter: { ...actor, locationId: target.id },
@@ -57,7 +57,7 @@ export function applyConsequences(
     case "SPEAK":
       return {
         newWorldState: state,
-        observableFacts: [`${context.target.name} vous répond brièvement.`],
+        observableFacts: [`${context.target.name} vous rÃ©pond briÃ¨vement.`],
         consequences: [],
         targetId: context.target.id,
         actorAfter: actor,
@@ -114,7 +114,7 @@ export function applyConsequences(
         },
         observableFacts: [`${object.name} est maintenant dans vos affaires.`],
         consequences: [
-          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}→${actor.id}`,
+          `object:${object.id}:owner:${object.ownerId ?? object.locationId ?? "sol"}â†’${actor.id}`,
         ],
         targetId: object.id,
         actorAfter: entities[actor.id],
@@ -133,6 +133,9 @@ export function applyConsequences(
       };
     case "EAT": {
       const object = context.target;
+      const { [object.id]: consumedObject, ...remainingObjects } =
+        state.objects;
+      void consumedObject;
       return {
         newWorldState: {
           ...state,
@@ -144,10 +147,7 @@ export function applyConsequences(
               hunger: Math.min(100, (actor.hunger ?? 50) + 30),
             },
           },
-          objects: {
-            ...state.objects,
-            [object.id]: { ...object, locationId: null, ownerId: null },
-          },
+          objects: remainingObjects,
         },
         observableFacts: [`Vous mangez ${object.name}. Votre faim diminue.`],
         consequences: [
@@ -177,27 +177,12 @@ export function applyConsequences(
           "Vous dormez plusieurs heures. Votre fatigue se dissipe.",
         ],
         consequences: [
-          `entity:${actor.id}:fatigue:${fatigueBefore}→${fatigueAfter}`,
+          `entity:${actor.id}:fatigue:${fatigueBefore}â†’${fatigueAfter}`,
         ],
         targetId: null,
         actorAfter: { ...actor, fatigue: fatigueAfter },
       };
     }
-    case "GIVE":
-      return {
-        newWorldState: state,
-        observableFacts: ["L'échange a lieu."],
-        consequences: [],
-        targetId: null,
-        actorAfter: actor,
-      };
-    case "USE":
-      return {
-        newWorldState: state,
-        observableFacts: [],
-        consequences: [],
-        targetId: null,
-        actorAfter: actor,
-      };
   }
 }
+
