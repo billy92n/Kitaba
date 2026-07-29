@@ -13,6 +13,9 @@ const contextFile = fileURLToPath(
     import.meta.url,
   ),
 );
+const autonomyDomainFile = fileURLToPath(
+  new URL("../artifacts/api-server/src/domain/autonomy.ts", import.meta.url),
+);
 
 const checks = [
   {
@@ -35,6 +38,12 @@ const checks = [
       /\bDate\.now\b/,
       /\brandomUUID\b/,
       /\bObject\.values\b/,
+    ],
+  },
+  {
+    file: autonomyDomainFile,
+    forbidden: [
+      /\b(?:intentKey|candidateKey|targetId|previousLocationId)\.length\s*===\s*0/,
     ],
   },
 ];
