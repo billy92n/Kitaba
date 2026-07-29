@@ -126,6 +126,28 @@ describe("knowledgeIsolation", () => {
     expect(entityNames).not.toContain("Tariq");
   });
 
+  it("ignore les index locaux périmés avant toute narration", () => {
+    const state = createInitialWorldState("Yara");
+    const observer = state.entities[state.controlledEntityId];
+    const location = state.locations[observer.locationId];
+    location.presentEntities.push("hamid");
+    location.presentObjects.push("minerai_fer");
+    observer.inventory.push("panier_legumes");
+
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyEvent),
+    );
+    expect(facts.presentEntities.map((entity) => entity.name)).not.toContain(
+      state.entities.hamid.name,
+    );
+    expect(facts.presentObjects.map((object) => object.name)).not.toContain(
+      state.objects.minerai_fer.name,
+    );
+    expect(facts.inventoryObjects.map((object) => object.name)).not.toContain(
+      state.objects.panier_legumes.name,
+    );
+  });
+
   it("ne transmet pas les conséquences privées de Hamid à Tariq dans un autre lieu", () => {
     const state = createInitialWorldState("Yara");
     const resolved = resolveAction(state, "hamid", takeMineral, {
