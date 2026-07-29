@@ -3,6 +3,7 @@ import {
   type StructuredAction,
 } from "../domain/actions.js";
 import {
+  isCanonicalAutonomyIdentity,
   MAX_COMMITMENT_TURNS,
   type PersistentGoalKind,
 } from "../domain/autonomy.js";
@@ -59,6 +60,7 @@ export type AutonomousDecisionResult =
       code:
         | "NO_ELIGIBLE_ACTION"
         | "DUPLICATE_CANDIDATE_KEY"
+        | "INVALID_AUTONOMY_IDENTITY"
         | "UNBOUND_TARGETED_CANDIDATE";
       trace: AutonomousDecisionTrace;
     };
@@ -273,6 +275,8 @@ export function decideAutonomousAction(
   config: AutonomousDecisionConfig,
 ): AutonomousDecisionResult {
   const seed = String(config.seed);
+  const traceActorId =
+    typeof input.actor.actorId === "string" ? input.actor.actorId : "";
   const maxSeedNoise = boundedConfiguration(
     config.maxSeedNoise,
     DEFAULT_SEED_NOISE,
@@ -286,6 +290,38 @@ export function decideAutonomousAction(
     DEFAULT_COMMITMENT_TURNS,
     MAX_COMMITMENT_TURNS,
   );
+
+  const previousDecision = input.actor.previousDecision;
+  const hasInvalidIdentity =
+    !isCanonicalAutonomyIdentity(input.actor.actorId) ||
+    !isCanonicalAutonomyIdentity(input.actor.locationId) ||
+    (previousDecision !== null &&
+      (!isCanonicalAutonomyIdentity(previousDecision.intentKey) ||
+        (previousDecision.previousLocationId !== undefined &&
+          !isCanonicalAutonomyIdentity(
+            previousDecision.previousLocationId,
+          )))) ||
+    input.candidates.some(
+      (candidate) =>
+        !isCanonicalAutonomyIdentity(candidate.candidateKey) ||
+        (candidate.targetId !== undefined &&
+          !isCanonicalAutonomyIdentity(candidate.targetId)),
+    );
+  if (hasInvalidIdentity) {
+    return {
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+      trace: {
+        actorId: traceActorId,
+        seed,
+        candidates: [],
+        selectedCandidateKey: null,
+        tieBreak: "Non-canonical autonomous identities are rejected.",
+        reason:
+          "Autonomous identities must be non-empty strings without peripheral whitespace.",
+      },
+    };
+  }
 
   const orderedCandidates = [...input.candidates].sort((left, right) =>
     compareText(left.candidateKey, right.candidateKey),
@@ -316,8 +352,7 @@ export function decideAutonomousAction(
   const unboundTargetedCandidate = orderedCandidates.find(
     (candidate) =>
       actionRequiresCanonicalTarget(candidate.action.actionType) &&
-      (candidate.targetId === undefined ||
-        candidate.targetId.trim().length === 0),
+      candidate.targetId === undefined,
   );
   if (unboundTargetedCandidate) {
     return {
