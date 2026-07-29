@@ -196,9 +196,10 @@ share the same maximum, so the kernel cannot emit an unreadable next state.
 
 Candidate generation touches only the acting entity, its location adjacency,
 present entities/objects and its own inventory. It does not scan every world
-entity. Scoring is linear in the number of prepared candidates and has no global
-mutable cache. A later scheduler may choose which actors to activate and at what
-simulation level; this ADR intentionally adds no server loop or cron.
+entity. Computing candidate scores is linear; deterministic sorting makes the
+complete decision `O(n log n)` in the number of prepared candidates. There is no
+global mutable cache. A later scheduler may choose which actors to activate and at
+what simulation level; this ADR intentionally adds no server loop or cron.
 
 ## Deferred
 
