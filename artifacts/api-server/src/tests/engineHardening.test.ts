@@ -395,7 +395,7 @@ describe("contrats du moteur", () => {
       );
       expect(result).toMatchObject({
         success: false,
-        error: { code: "TARGET_NOT_FOUND" },
+        failureCode: "TARGET_NOT_FOUND",
       });
     },
   );
