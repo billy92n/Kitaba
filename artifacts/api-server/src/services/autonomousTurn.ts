@@ -51,7 +51,10 @@ export type PrepareAutonomousTurnResult =
   | { success: true; prepared: PreparedAutonomousTurn }
   | {
       success: false;
-      code: AutonomousContextFailureCode | "NO_ELIGIBLE_ACTION";
+      code:
+        | AutonomousContextFailureCode
+        | "NO_ELIGIBLE_ACTION"
+        | "DUPLICATE_CANDIDATE_KEY";
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
     };
@@ -77,7 +80,11 @@ export type AutonomousTurnResult =
     }
   | {
       status: "REFUSED";
-      code: AutonomousContextFailureCode | "NO_ELIGIBLE_ACTION";
+      code:
+        | AutonomousContextFailureCode
+        | "NO_ELIGIBLE_ACTION"
+        | "DUPLICATE_CANDIDATE_KEY"
+        | "SESSION_VERSION_MISMATCH";
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
     };
@@ -141,6 +148,14 @@ export async function runAutonomousTurn(
   const session = await effectiveDependencies.loadSession(sessionId);
   if (!session) {
     return { status: "NOT_FOUND", code: "SESSION_NOT_FOUND" };
+  }
+  if (session.worldVersion !== session.worldState.worldVersion) {
+    return {
+      status: "REFUSED",
+      code: "SESSION_VERSION_MISMATCH",
+      reason:
+        "The persisted session revision and serialized world revision differ.",
+    };
   }
 
   const planned = prepareAutonomousTurn(
