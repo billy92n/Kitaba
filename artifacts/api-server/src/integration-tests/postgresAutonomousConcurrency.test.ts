@@ -7,8 +7,11 @@ import {
   pool,
 } from "@workspace/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { WorldState } from "../domain/world.js";
 import { resolveAction } from "../engine/actionResolver.js";
+import { loadSession } from "../persistence/worldRepository.js";
 import { postgresActionCommitPort } from "../services/postgresActionCommit.js";
+import { runWorldSchedulerBatch } from "../services/worldScheduler.js";
 import { createInitialWorldState } from "../worldSeed.js";
 
 const sessionId = "autonomy-concurrency-integration";
@@ -152,5 +155,70 @@ describe("PostgreSQL autonomous optimistic concurrency", () => {
         .from(kitabaSessionsTable)
         .where(eq(kitabaSessionsTable.id, sessionId)),
     ).toMatchObject([{ id: sessionId, worldVersion: 1 }]);
+  });
+
+  it("atomically keeps one scheduler transition for two stale batches", async () => {
+    const initial = createInitialWorldState("Scheduler");
+    await db
+      .delete(kitabaEventsTable)
+      .where(eq(kitabaEventsTable.sessionId, sessionId));
+    await db
+      .delete(kitabaSavesTable)
+      .where(eq(kitabaSavesTable.sessionId, sessionId));
+    await db
+      .delete(kitabaSessionsTable)
+      .where(eq(kitabaSessionsTable.id, sessionId));
+    await db.insert(kitabaSessionsTable).values({
+      id: sessionId,
+      controlledEntityId: initial.controlledEntityId,
+      worldVersion: initial.worldVersion,
+      worldState: initial,
+      narrativeHistory: [],
+    });
+    const staleSnapshot = await loadSession(sessionId);
+    expect(staleSnapshot).not.toBeNull();
+    if (!staleSnapshot) return;
+    const dependencies = {
+      loadSession: async () => staleSnapshot,
+      commitPort: postgresActionCommitPort,
+    };
+
+    const results = await Promise.all([
+      runWorldSchedulerBatch(
+        sessionId,
+        { seed: "postgres-scheduler", budgetUnits: 8 },
+        dependencies,
+      ),
+      runWorldSchedulerBatch(
+        sessionId,
+        { seed: "postgres-scheduler", budgetUnits: 8 },
+        dependencies,
+      ),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual([
+      "COMPLETED",
+      "CONFLICT",
+    ]);
+    expect(
+      await db
+        .select()
+        .from(kitabaEventsTable)
+        .where(eq(kitabaEventsTable.sessionId, sessionId)),
+    ).toHaveLength(1);
+    expect(
+      await db
+        .select()
+        .from(kitabaSavesTable)
+        .where(eq(kitabaSavesTable.sessionId, sessionId)),
+    ).toHaveLength(1);
+    const [persisted] = await db
+      .select()
+      .from(kitabaSessionsTable)
+      .where(eq(kitabaSessionsTable.id, sessionId));
+    expect(persisted).toMatchObject({ worldVersion: 1 });
+    expect(
+      (persisted?.worldState as WorldState | undefined)?.scheduler?.revision,
+    ).toBe(1);
   });
 });

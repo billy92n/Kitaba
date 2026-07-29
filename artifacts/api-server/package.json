@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "benchmark:autonomy": "vitest run --configLoader runner --config vitest.benchmark.config.ts --reporter=verbose",
+    "benchmark:scheduler": "vitest run --configLoader runner --config vitest.benchmark.config.ts src/benchmarks/worldSchedulerBenchmark.ts --reporter=verbose",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage --coverage.include=src/engine/**/*.ts --coverage.reporter=text --coverage.thresholds.functions=100 --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.branches=100",

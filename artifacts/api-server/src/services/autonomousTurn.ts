@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { GameEvent } from "../domain/events.js";
 import type { PerceptibleFacts } from "../domain/knowledge.js";
 import type { EntityId, WorldState } from "../domain/world.js";
+import type {
+  ScheduledActivation,
+  WorldSchedulerState,
+} from "../domain/scheduler.js";
 import {
   buildAutonomousDecisionInput,
   type AutonomousContextFailureCode,
@@ -16,6 +20,13 @@ import {
   type ResolvedAction,
 } from "../engine/actionResolver.js";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
+import {
+  completeScheduledActivation,
+  materializeScheduledActivation,
+  SchedulerInvariantError,
+  type ResolvedWorldSchedulerConfig,
+  type SchedulerFailureCode,
+} from "../engine/worldScheduler.js";
 import { narrateFromPerception } from "../llm/narrateResult.js";
 import type { NarrativeEntry } from "../persistence/types.js";
 import {
@@ -47,16 +58,25 @@ export interface PreparedAutonomousTurn {
   resolution: ResolvedAction;
 }
 
+export interface ScheduledTurnContext {
+  activation: ScheduledActivation;
+  config: ResolvedWorldSchedulerConfig;
+}
+
+type AutonomousTurnFailureCode =
+  | AutonomousContextFailureCode
+  | SchedulerFailureCode
+  | "NO_ELIGIBLE_ACTION"
+  | "DUPLICATE_CANDIDATE_KEY"
+  | "INVALID_AUTONOMY_IDENTITY"
+  | "UNBOUND_TARGETED_CANDIDATE"
+  | "SCHEDULED_ACTION_REJECTED";
+
 export type PrepareAutonomousTurnResult =
   | { success: true; prepared: PreparedAutonomousTurn }
   | {
       success: false;
-      code:
-        | AutonomousContextFailureCode
-        | "NO_ELIGIBLE_ACTION"
-        | "DUPLICATE_CANDIDATE_KEY"
-        | "INVALID_AUTONOMY_IDENTITY"
-        | "UNBOUND_TARGETED_CANDIDATE";
+      code: AutonomousTurnFailureCode;
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
     };
@@ -67,6 +87,7 @@ export type AutonomousTurnResult =
       decisionTrace: AutonomousDecisionTrace;
       event: GameEvent;
       worldState: WorldState;
+      narrativeHistory: NarrativeEntry[];
       observerFacts: PerceptibleFacts | null;
       observerNarration: string | null;
     }
@@ -82,13 +103,7 @@ export type AutonomousTurnResult =
     }
   | {
       status: "REFUSED";
-      code:
-        | AutonomousContextFailureCode
-        | "NO_ELIGIBLE_ACTION"
-        | "DUPLICATE_CANDIDATE_KEY"
-        | "INVALID_AUTONOMY_IDENTITY"
-        | "UNBOUND_TARGETED_CANDIDATE"
-        | "SESSION_VERSION_MISMATCH";
+      code: AutonomousTurnFailureCode | "SESSION_VERSION_MISMATCH";
       reason: string;
       decisionTrace?: AutonomousDecisionTrace;
     };
@@ -118,8 +133,24 @@ export function prepareAutonomousTurn(
   actorId: EntityId,
   config: AutonomousDecisionConfig,
   createEventId: () => string,
+  scheduled?: ScheduledTurnContext,
 ): PrepareAutonomousTurnResult {
-  const context = buildAutonomousDecisionInput(state, actorId);
+  let decisionState = state;
+  if (scheduled) {
+    try {
+      decisionState = materializeScheduledActivation(
+        state as WorldState & { scheduler: WorldSchedulerState },
+        scheduled.activation,
+        scheduled.config,
+      );
+    } catch (error) {
+      if (error instanceof SchedulerInvariantError) {
+        return { success: false, code: error.code, reason: error.message };
+      }
+      throw error;
+    }
+  }
+  const context = buildAutonomousDecisionInput(decisionState, actorId);
   if (!context.success) return context;
   const decision = decideAutonomousAction(context.input, config);
   if (!decision.success) {
@@ -130,29 +161,47 @@ export function prepareAutonomousTurn(
       decisionTrace: decision.trace,
     };
   }
+  const resolution = resolveAction(decisionState, actorId, decision.action, {
+    createEventId,
+  });
+  if (scheduled && !resolution.success) {
+    return {
+      success: false,
+      code: "SCHEDULED_ACTION_REJECTED",
+      reason: `The selected action was rejected with ${resolution.failureCode}.`,
+      decisionTrace: decision.trace,
+    };
+  }
+  const scheduledResolution =
+    scheduled && resolution.success
+      ? {
+          ...resolution,
+          newWorldState: completeScheduledActivation(
+            resolution.newWorldState as WorldState & {
+              scheduler: WorldSchedulerState;
+            },
+            scheduled.activation,
+            scheduled.config,
+          ),
+        }
+      : resolution;
   return {
     success: true,
     prepared: {
       decisionTrace: decision.trace,
-      resolution: resolveAction(state, actorId, decision.action, {
-        createEventId,
-      }),
+      resolution: scheduledResolution,
     },
   };
 }
 
-export async function runAutonomousTurn(
-  sessionId: string,
+export async function runAutonomousTurnFromSnapshot(
+  session: AutonomousSessionSnapshot,
   actorId: EntityId,
   config: AutonomousDecisionConfig,
-  dependencies?: AutonomousTurnDependencies,
+  dependencies: AutonomousTurnDependencies,
+  scheduled?: ScheduledTurnContext,
 ): Promise<AutonomousTurnResult> {
-  const effectiveDependencies =
-    dependencies ?? (await createDefaultDependencies());
-  const session = await effectiveDependencies.loadSession(sessionId);
-  if (!session) {
-    return { status: "NOT_FOUND", code: "SESSION_NOT_FOUND" };
-  }
+  const sessionId = session.id;
   if (session.worldVersion !== session.worldState.worldVersion) {
     return {
       status: "REFUSED",
@@ -166,7 +215,8 @@ export async function runAutonomousTurn(
     session.worldState,
     actorId,
     config,
-    effectiveDependencies.createEventId,
+    dependencies.createEventId,
+    scheduled,
   );
   if (!planned.success) {
     return {
@@ -193,16 +243,16 @@ export async function runAutonomousTurn(
       ? observerPerception.facts
       : null;
   const observerNarration = observerFacts
-    ? effectiveDependencies.narrate(observerFacts)
+    ? dependencies.narrate(observerFacts)
     : null;
   const narrativeHistory = observerNarration
     ? [
         ...session.narrativeHistory,
         {
-          id: effectiveDependencies.createNarrativeEntryId(),
+          id: dependencies.createNarrativeEntryId(),
           type: "narrator" as const,
           text: observerNarration,
-          timestamp: effectiveDependencies.nowIso(),
+          timestamp: dependencies.nowIso(),
         },
       ]
     : [...session.narrativeHistory];
@@ -216,9 +266,9 @@ export async function runAutonomousTurn(
         newWorldState,
         narrativeHistory,
         event,
-        autoSaveId: effectiveDependencies.createAutoSaveId(),
+        autoSaveId: dependencies.createAutoSaveId(),
       },
-      effectiveDependencies.commitPort,
+      dependencies.commitPort,
     );
   } catch (error) {
     if (error instanceof WorldVersionConflictError) {
@@ -237,7 +287,28 @@ export async function runAutonomousTurn(
     decisionTrace: planned.prepared.decisionTrace,
     event,
     worldState: newWorldState,
+    narrativeHistory,
     observerFacts,
     observerNarration,
   };
+}
+
+export async function runAutonomousTurn(
+  sessionId: string,
+  actorId: EntityId,
+  config: AutonomousDecisionConfig,
+  dependencies?: AutonomousTurnDependencies,
+): Promise<AutonomousTurnResult> {
+  const effectiveDependencies =
+    dependencies ?? (await createDefaultDependencies());
+  const session = await effectiveDependencies.loadSession(sessionId);
+  if (!session) {
+    return { status: "NOT_FOUND", code: "SESSION_NOT_FOUND" };
+  }
+  return runAutonomousTurnFromSnapshot(
+    session,
+    actorId,
+    config,
+    effectiveDependencies,
+  );
 }

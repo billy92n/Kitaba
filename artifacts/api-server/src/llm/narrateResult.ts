@@ -10,7 +10,10 @@ import { formatWorldDate } from "../domain/world.js";
 
 type NarratableFacts = PerceptibleFacts & { actionOutcome: ActionOutcome };
 
-function narrateMove(facts: NarratableFacts): string {
+function narrateMove(
+  facts: NarratableFacts,
+  randomValue: () => number,
+): string {
   if (!facts.actionOutcome.success) {
     const reason =
       facts.actionOutcome.observableFacts[0] ??
@@ -28,7 +31,7 @@ function narrateMove(facts: NarratableFacts): string {
     `Vos pas vous mènent jusqu'à ${loc}.`,
     `Vous pénétrez dans ${loc}.`,
   ];
-  const opener = openers[Math.floor(Math.random() * openers.length)];
+  const opener = openers[Math.floor(randomValue() * openers.length)];
 
   let text = `${opener} ${desc}`;
   if (others.length > 0) {
@@ -38,7 +41,10 @@ function narrateMove(facts: NarratableFacts): string {
   return text;
 }
 
-function narrateSpeak(facts: NarratableFacts): string {
+function narrateSpeak(
+  facts: NarratableFacts,
+  randomValue: () => number,
+): string {
   if (!facts.actionOutcome.success) {
     const reason =
       facts.actionOutcome.observableFacts[0] ??
@@ -47,7 +53,7 @@ function narrateSpeak(facts: NarratableFacts): string {
   }
   const target = facts.actionOutcome.targetName ?? "votre interlocuteur";
   const moods = ["pensif", "attentif", "distrait", "cordial", "réservé"];
-  const randomMood = moods[Math.floor(Math.random() * moods.length)];
+  const randomMood = moods[Math.floor(randomValue() * moods.length)];
   return `${target} vous écoute, l'air ${randomMood}. Vos mots semblent résonner dans l'air, sans vraiment trouver de réponse immédiate. La conversation s'interrompt naturellement.`;
 }
 
@@ -135,7 +141,10 @@ function criticalStatusSuffix(facts: PerceptibleFacts): string {
 
 // ─── Point d'entrée principal ─────────────────────────────────────────────────
 
-export function narrateFromPerception(facts: PerceptibleFacts): string {
+export function narrateFromPerception(
+  facts: PerceptibleFacts,
+  randomValue: () => number = Math.random,
+): string {
   if (!facts.actionOutcome) {
     return (
       "Vous ne percevez aucun effet de cet événement." +
@@ -149,10 +158,10 @@ export function narrateFromPerception(facts: PerceptibleFacts): string {
   let base: string;
   switch (narratableFacts.actionOutcome.actionType) {
     case "move":
-      base = narrateMove(narratableFacts);
+      base = narrateMove(narratableFacts, randomValue);
       break;
     case "speak":
-      base = narrateSpeak(narratableFacts);
+      base = narrateSpeak(narratableFacts, randomValue);
       break;
     case "take":
       base = narrateTake(narratableFacts);
