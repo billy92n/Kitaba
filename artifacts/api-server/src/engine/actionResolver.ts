@@ -51,7 +51,12 @@ export function resolveAction(
           entities: { ...state.entities, [actorId]: activeActor },
         }
       : state;
-  const validation = validateAction(activeState, actorId, action);
+  const validation = validateAction(
+    activeState,
+    actorId,
+    action,
+    action.autonomy?.targetId,
+  );
 
   if (!validation.possible) {
     const event: GameEvent = {
@@ -93,6 +98,9 @@ export function resolveAction(
             autonomyDecisionState: {
               intentKey: action.autonomy.intentKey,
               remainingCommitmentTurns: action.autonomy.nextCommitmentTurns,
+              ...(action.autonomy.previousLocationId === undefined
+                ? {}
+                : { previousLocationId: action.autonomy.previousLocationId }),
             },
           },
         },
