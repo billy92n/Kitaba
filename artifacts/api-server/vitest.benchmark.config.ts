@@ -1,7 +1,8 @@
 export default {
   test: {
     environment: "node",
-    include: ["src/tests/**/*.test.ts"],
+    include: ["src/benchmarks/**/*.ts"],
     globals: true,
+    fileParallelism: false,
   },
 };

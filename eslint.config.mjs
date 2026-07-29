@@ -10,7 +10,9 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["artifacts/api-server/src/{engine,services,tests}/**/*.ts"],
+    files: [
+      "artifacts/api-server/src/{benchmarks,domain,engine,integration-tests,services,tests}/**/*.ts",
+    ],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
@@ -40,4 +42,3 @@ export default tseslint.config(
     },
   },
 );
-

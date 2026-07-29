@@ -5,6 +5,7 @@
 import type { WorldState, WorldTime } from "./domain/world.js";
 import type { Entity } from "./domain/entities.js";
 import type { Relation } from "./domain/relations.js";
+import { DEFAULT_AUTONOMY_PROFILE } from "./domain/autonomy.js";
 
 export function createInitialWorldState(playerName: string): WorldState {
   const playerId = "player";
@@ -136,7 +137,14 @@ export function createInitialWorldState(playerName: string): WorldState {
     [playerId]: playerEntity,
     ...npcs,
   })) {
-    entities[id] = { ...entity, lastSimulationTime: initialTime };
+    entities[id] = {
+      ...entity,
+      autonomyProfile: {
+        traits: { ...DEFAULT_AUTONOMY_PROFILE.traits },
+        persistentGoal: { ...DEFAULT_AUTONOMY_PROFILE.persistentGoal },
+      },
+      lastSimulationTime: initialTime,
+    };
   }
 
   return {

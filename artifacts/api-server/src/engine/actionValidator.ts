@@ -1,4 +1,8 @@
-import type { StructuredAction } from "../domain/actions.js";
+import {
+  actionRequiresCanonicalTarget,
+  type StructuredAction,
+} from "../domain/actions.js";
+import { resolveAutonomousActionMetadata } from "../domain/autonomy.js";
 import type { Entity } from "../domain/entities.js";
 import type {
   EntityId,
@@ -21,6 +25,7 @@ export type ActionFailureCode =
   | "TARGET_NOT_FOUND"
   | "TARGET_AMBIGUOUS"
   | "OBJECT_NOT_EDIBLE"
+  | "INVALID_AUTONOMY_METADATA"
   | "ACTION_NOT_IMPLEMENTED"
   | "ACTION_NOT_ALLOWED";
 
@@ -74,10 +79,85 @@ function ambiguous(actor: Entity, candidateIds: string[]): ActionFailure {
   );
 }
 
+function exactObjectAvailability(
+  state: WorldState,
+  actor: Entity,
+  targetId: string,
+): { object: WorldObject; availability: ObjectAvailability } | null {
+  const object = state.objects[targetId];
+  if (!object) return null;
+  if (object.ownerId === actor.id && actor.inventory.includes(object.id)) {
+    return { object, availability: "ACTOR_INVENTORY" };
+  }
+  if (
+    object.ownerId === null &&
+    object.locationId === actor.locationId &&
+    state.locations[actor.locationId]?.presentObjects.includes(object.id)
+  ) {
+    return { object, availability: "GROUND" };
+  }
+  if (
+    object.ownerId !== null &&
+    object.ownerId !== actor.id &&
+    state.entities[object.ownerId]?.locationId === actor.locationId &&
+    state.entities[object.ownerId]?.inventory.includes(object.id) === true
+  ) {
+    return { object, availability: "OTHER_INVENTORY" };
+  }
+  return null;
+}
+
+function exactInspectable(
+  state: WorldState,
+  actor: Entity,
+  targetId: string,
+): ResolvedInspectable | null {
+  const object = exactObjectAvailability(state, actor, targetId);
+  if (object) {
+    return {
+      kind: "OBJECT",
+      id: object.object.id,
+      name: object.object.name,
+      description: object.object.description,
+    };
+  }
+  const entity = state.entities[targetId];
+  if (
+    entity &&
+    entity.id !== actor.id &&
+    entity.locationId === actor.locationId &&
+    state.locations[actor.locationId]?.presentEntities.includes(entity.id)
+  ) {
+    return {
+      kind: "ENTITY",
+      id: entity.id,
+      name: entity.name,
+      description: entity.description,
+    };
+  }
+  const location = state.locations[targetId];
+  if (
+    location &&
+    (location.id === actor.locationId ||
+      state.locations[actor.locationId]?.connectedLocations.includes(
+        location.id,
+      ))
+  ) {
+    return {
+      kind: "LOCATION",
+      id: location.id,
+      name: location.name,
+      description: location.description,
+    };
+  }
+  return null;
+}
+
 export function validateAction(
   state: WorldState,
   actorId: EntityId,
   action: StructuredAction,
+  resolvedTargetId?: string,
 ): ValidationResult {
   const actor = state.entities[actorId];
   if (!actor)
@@ -91,10 +171,39 @@ export function validateAction(
     );
   }
   const base = { actor, location, action };
+  if (action.autonomy !== undefined) {
+    try {
+      resolveAutonomousActionMetadata(action.autonomy);
+    } catch {
+      return fail(
+        "INVALID_AUTONOMY_METADATA",
+        "Autonomous action metadata is invalid.",
+        actor,
+      );
+    }
+    if (
+      actionRequiresCanonicalTarget(action.actionType) &&
+      action.autonomy.targetId === undefined
+    ) {
+      return fail(
+        "INVALID_AUTONOMY_METADATA",
+        "A targeted autonomous action requires a canonical target.",
+        actor,
+      );
+    }
+  }
 
   switch (action.actionType) {
     case "move": {
-      const target = findLocationByQuery(state, action.targetName);
+      const target =
+        resolvedTargetId !== undefined
+          ? state.locations[resolvedTargetId]
+            ? {
+                status: "FOUND" as const,
+                target: state.locations[resolvedTargetId],
+              }
+            : { status: "MISSING" as const }
+          : findLocationByQuery(state, action.targetName);
       if (target.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
@@ -128,12 +237,24 @@ export function validateAction(
       if (!action.targetName) {
         return fail("TARGET_NOT_FOUND", "À qui voulez-vous parler ?", actor);
       }
-      const target = findEntityAtLocation(
-        state,
-        actorId,
-        actor.locationId,
-        action.targetName,
-      );
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? state.entities[resolvedTargetId]
+          : undefined;
+      const target =
+        resolvedTargetId !== undefined
+          ? exactTarget &&
+            exactTarget.id !== actorId &&
+            exactTarget.locationId === actor.locationId &&
+            location.presentEntities.includes(exactTarget.id)
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : findEntityAtLocation(
+              state,
+              actorId,
+              actor.locationId,
+              action.targetName,
+            );
       if (target.status === "AMBIGUOUS") {
         return ambiguous(actor, target.candidateIds);
       }
@@ -149,11 +270,16 @@ export function validateAction(
           );
     }
     case "take": {
-      const resolved = resolveObjectInActorContext(
-        state,
-        actorId,
-        action.targetName,
-      );
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactObjectAvailability(state, actor, resolvedTargetId)
+          : null;
+      const resolved =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : resolveObjectInActorContext(state, actorId, action.targetName);
       if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
@@ -182,9 +308,25 @@ export function validateAction(
       };
     }
     case "examine": {
-      const target = findInspectable(state, actorId, action.targetName);
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactInspectable(state, actor, resolvedTargetId)
+          : null;
+      const target =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : findInspectable(state, actorId, action.targetName);
       if (target.status === "AMBIGUOUS") {
         return ambiguous(actor, target.candidateIds);
+      }
+      if (resolvedTargetId !== undefined && target.status === "MISSING") {
+        return fail(
+          "TARGET_NOT_FOUND",
+          `La cible inspectable "${action.targetName ?? resolvedTargetId}" n'est plus accessible.`,
+          actor,
+        );
       }
       return {
         possible: true,
@@ -196,11 +338,16 @@ export function validateAction(
       };
     }
     case "eat": {
-      const resolved = resolveObjectInActorContext(
-        state,
-        actorId,
-        action.targetName,
-      );
+      const exactTarget =
+        resolvedTargetId !== undefined
+          ? exactObjectAvailability(state, actor, resolvedTargetId)
+          : null;
+      const resolved =
+        resolvedTargetId !== undefined
+          ? exactTarget
+            ? { status: "FOUND" as const, target: exactTarget }
+            : { status: "MISSING" as const }
+          : resolveObjectInActorContext(state, actorId, action.targetName);
       if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
