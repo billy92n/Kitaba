@@ -316,7 +316,8 @@ export function decideAutonomousAction(
   const unboundTargetedCandidate = orderedCandidates.find(
     (candidate) =>
       actionRequiresCanonicalTarget(candidate.action.actionType) &&
-      candidate.targetId === undefined,
+      (candidate.targetId === undefined ||
+        candidate.targetId.trim().length === 0),
   );
   if (unboundTargetedCandidate) {
     return {
