@@ -35,6 +35,7 @@ function input(candidateCount: number): AutonomousDecisionInput {
     },
     candidates: Array.from({ length: candidateCount }, (_, index) => ({
       candidateKey: `move:location-${index.toString().padStart(5, "0")}`,
+      targetId: `location-${index.toString().padStart(5, "0")}`,
       action: {
         actionType: "move" as const,
         targetName: `Location ${index}`,
