@@ -79,7 +79,7 @@ describe("moteur multi-acteur", () => {
 
   it.each([
     ["lanterne", "ACTION_NOT_ALLOWED"],
-    ["marteau", "ACTION_NOT_ALLOWED"],
+    ["marteau", "TARGET_NOT_FOUND"],
     ["objet absent", "TARGET_NOT_FOUND"],
   ])("refuse de manger %s hors inventaire ou absent", (target, failureCode) => {
     const state = createInitialWorldState("Yara");
