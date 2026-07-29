@@ -119,4 +119,3 @@ describe("persistance â€” logique de cohÃ©rence", () => {
     }
   });
 });
-
