@@ -191,4 +191,3 @@ describe("contrats HTTP du jeu", () => {
     expect(service.processPlayerAction).not.toHaveBeenCalled();
   });
 });
-
