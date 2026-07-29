@@ -43,20 +43,43 @@ export function serializeEventDetails(event: GameEvent): StoredEventDetails {
   };
 }
 
+function isEventObservation(value: unknown): value is EventObservation {
+  if (value === null || typeof value !== "object") return false;
+  if (!("audience" in value) || !("text" in value)) return false;
+  return (
+    (value.audience === "ACTOR" ||
+      value.audience === "LOCATION" ||
+      value.audience === "PUBLIC") &&
+    typeof value.text === "string"
+  );
+}
+
+function isStoredEventDetails(value: unknown): value is StoredEventDetails {
+  if (value === null || typeof value !== "object") return false;
+  if (
+    !("changes" in value) ||
+    !("observations" in value) ||
+    !("requestedTargetName" in value) ||
+    !("status" in value)
+  ) {
+    return false;
+  }
+  return (
+    Array.isArray(value.changes) &&
+    value.changes.every((entry) => typeof entry === "string") &&
+    Array.isArray(value.observations) &&
+    value.observations.every(isEventObservation) &&
+    (value.requestedTargetName === null ||
+      typeof value.requestedTargetName === "string") &&
+    (value.status === "APPLIED" || value.status === "REJECTED")
+  );
+}
+
 export function deserializeEventDetails(
   value: unknown,
   legacyDescription: string,
 ): StoredEventDetails {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    "changes" in value &&
-    "observations" in value &&
-    "requestedTargetName" in value &&
-    "status" in value
-  ) {
-    return value as StoredEventDetails;
-  }
+  if (isStoredEventDetails(value)) return value;
   return {
     changes: Array.isArray(value)
       ? value.filter((entry): entry is string => typeof entry === "string")
