@@ -219,7 +219,10 @@ function considerationsFor(
           weight: 2,
         },
       ];
-    default:
+    case "unknown":
+    case "give":
+    case "attack":
+    case "use":
       return [];
   }
 }
