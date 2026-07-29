@@ -1,7 +1,8 @@
 import {
-  runWorldSchedulerBatch,
+  createWorldSchedulerBatchRunner,
   type CompletedScheduledActivation,
   type WorldSchedulerBatchConfig,
+  type WorldSchedulerBatchRunner,
   type WorldSchedulerBatchResult,
 } from "./worldScheduler.js";
 
@@ -12,10 +13,10 @@ export interface WorldSchedulerWorkerOptions {
 }
 
 export interface WorldSchedulerWorkerDependencies {
-  runBatch(
+  createBatchRunner(
     sessionId: string,
     config: WorldSchedulerBatchConfig,
-  ): Promise<WorldSchedulerBatchResult>;
+  ): Promise<WorldSchedulerBatchRunner>;
 }
 
 export type WorldSchedulerWorkerResult =
@@ -34,7 +35,7 @@ export type WorldSchedulerWorkerResult =
     };
 
 const defaultDependencies: WorldSchedulerWorkerDependencies = {
-  runBatch: runWorldSchedulerBatch,
+  createBatchRunner: createWorldSchedulerBatchRunner,
 };
 
 /**
@@ -52,13 +53,16 @@ export async function runWorldSchedulerWorker(
 
   const activations: CompletedScheduledActivation[] = [];
   let spentBudget = 0;
+  const runBatch = await dependencies.createBatchRunner(
+    options.sessionId,
+    options.batchConfig,
+  );
 
   for (let batch = 1; batch <= options.maxBatches; batch += 1) {
-    const result = await dependencies.runBatch(
-      options.sessionId,
-      options.batchConfig,
-    );
+    const result = await runBatch();
     if (result.status !== "COMPLETED") {
+      if ("spentBudget" in result) spentBudget += result.spentBudget;
+      if ("activations" in result) activations.push(...result.activations);
       return {
         status: "INTERRUPTED",
         batches: batch,

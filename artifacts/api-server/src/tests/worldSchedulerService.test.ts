@@ -4,6 +4,7 @@ import type {
   ActionCommitPort,
 } from "../services/actionCommit.js";
 import type { AutonomousSessionSnapshot } from "../services/autonomousTurn.js";
+import { ensureWorldScheduler } from "../engine/worldScheduler.js";
 import {
   runWorldSchedulerBatch,
   type WorldSchedulerBatchDependencies,
@@ -251,6 +252,40 @@ describe("world scheduler service", () => {
     ).resolves.toMatchObject({
       status: "REFUSED",
       code: "SCHEDULER_SEED_MISMATCH",
+      spentBudget: 0,
+    });
+
+    const corrupt = snapshot();
+    const scheduledWorld = ensureWorldScheduler(
+      corrupt.worldState,
+      "deep-corruption",
+    );
+    corrupt.worldState = scheduledWorld;
+    const queue = scheduledWorld.scheduler.queue;
+    expect(queue).not.toBeNull();
+    if (!queue) return;
+    const pending = [{ node: queue, depth: 0 }];
+    let corrupted = false;
+    while (pending.length > 0) {
+      const { node, depth } = pending.pop() as (typeof pending)[number];
+      if (depth >= 2) {
+        node.entry.actorId = "missing-world-actor";
+        corrupted = true;
+        break;
+      }
+      if (node.left) pending.push({ node: node.left, depth: depth + 1 });
+      if (node.right) pending.push({ node: node.right, depth: depth + 1 });
+    }
+    expect(corrupted).toBe(true);
+    await expect(
+      runWorldSchedulerBatch(
+        corrupt.id,
+        { seed: "deep-corruption", budgetUnits: 8 },
+        dependencies(corrupt, new StatefulCommitPort(0, [])),
+      ),
+    ).resolves.toMatchObject({
+      status: "REFUSED",
+      code: "INVALID_SCHEDULER_STATE",
       spentBudget: 0,
     });
   });

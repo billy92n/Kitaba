@@ -18,6 +18,7 @@ function completed(
       WorldSchedulerBatchResult,
       { status: "COMPLETED" }
     >["worldState"],
+    narrativeHistory: [],
   };
 }
 
@@ -35,7 +36,9 @@ describe("world scheduler worker", () => {
       .mockResolvedValueOnce(completed("NO_ACTIVE_ACTOR"));
 
     await expect(
-      runWorldSchedulerWorker(options, { runBatch }),
+      runWorldSchedulerWorker(options, {
+        createBatchRunner: async () => runBatch,
+      }),
     ).resolves.toMatchObject({
       status: "DRAINED",
       batches: 2,
@@ -47,7 +50,9 @@ describe("world scheduler worker", () => {
   it("stops at its deterministic batch limit", async () => {
     const runBatch = vi.fn().mockResolvedValue(completed("FAIRNESS_BOUNDARY"));
     await expect(
-      runWorldSchedulerWorker(options, { runBatch }),
+      runWorldSchedulerWorker(options, {
+        createBatchRunner: async () => runBatch,
+      }),
     ).resolves.toMatchObject({
       status: "LIMIT_REACHED",
       batches: 2,
@@ -65,7 +70,9 @@ describe("world scheduler worker", () => {
     };
     const runBatch = vi.fn().mockResolvedValue(conflict);
     await expect(
-      runWorldSchedulerWorker(options, { runBatch }),
+      runWorldSchedulerWorker(options, {
+        createBatchRunner: async () => runBatch,
+      }),
     ).resolves.toMatchObject({
       status: "INTERRUPTED",
       batches: 1,
@@ -74,11 +81,41 @@ describe("world scheduler worker", () => {
     expect(runBatch).toHaveBeenCalledOnce();
   });
 
+  it("reports activations committed before a later conflict in the same batch", async () => {
+    const committedActivation = {
+      actorId: "first",
+      lod: "LOD1" as const,
+      dueMinute: 0,
+      budgetCost: 4,
+      schedulerRevision: 0,
+      eventId: "event-first",
+      selectedCandidateKey: "sleep",
+      worldVersion: 1,
+    };
+    const runBatch = vi.fn().mockResolvedValue({
+      status: "CONFLICT",
+      code: "WORLD_VERSION_CONFLICT",
+      spentBudget: 4,
+      activations: [committedActivation],
+      attemptedActorId: "second",
+    } satisfies WorldSchedulerBatchResult);
+
+    await expect(
+      runWorldSchedulerWorker(options, {
+        createBatchRunner: async () => runBatch,
+      }),
+    ).resolves.toMatchObject({
+      status: "INTERRUPTED",
+      spentBudget: 4,
+      activations: [committedActivation],
+    });
+  });
+
   it("rejects an unbounded or invalid batch count", async () => {
     await expect(
       runWorldSchedulerWorker(
         { ...options, maxBatches: 0 },
-        { runBatch: vi.fn() },
+        { createBatchRunner: vi.fn() },
       ),
     ).rejects.toThrow("maxBatches");
   });

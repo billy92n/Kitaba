@@ -15,7 +15,7 @@ import type {
   ActionCommitPort,
 } from "../services/actionCommit.js";
 import type { AutonomousSessionSnapshot } from "../services/autonomousTurn.js";
-import { runWorldSchedulerBatch } from "../services/worldScheduler.js";
+import { createWorldSchedulerBatchRunner } from "../services/worldScheduler.js";
 
 function largeWorld(actorCount: number): WorldState {
   const base = createInitialWorldState("Benchmark");
@@ -123,18 +123,19 @@ describe("world scheduler performance", () => {
         return "COMMITTED";
       },
     };
+    const runBatch = await createWorldSchedulerBatchRunner(
+      session.id,
+      {
+        seed: "service-benchmark-seed",
+        budgetUnits: 8,
+        lodProfiles: { LOD1: { cadenceMinutes: 60, budgetCost: 8 } },
+      },
+      { loadSession: async () => session, commitPort },
+    );
     const startedAt = performance.now();
     let activationCount = 0;
     for (let index = 0; index < actorCount; index += 1) {
-      const result = await runWorldSchedulerBatch(
-        session.id,
-        {
-          seed: "service-benchmark-seed",
-          budgetUnits: 8,
-          lodProfiles: { LOD1: { cadenceMinutes: 60, budgetCost: 8 } },
-        },
-        { loadSession: async () => session, commitPort },
-      );
+      const result = await runBatch();
       if (result.status !== "COMPLETED") {
         throw new Error(`Service benchmark stopped with ${result.status}.`);
       }

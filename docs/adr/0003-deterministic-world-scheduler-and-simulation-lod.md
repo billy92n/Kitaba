@@ -92,11 +92,14 @@ SQL n’est requise car `WorldState` est déjà stocké en JSONB. Après amorça
 scheduler ne parcourt plus toutes les entités.
 
 La file contient exactement une entrée par acteur connu. L’arbre persiste la
-forme du tas gauchiste. Le validateur exhaustif destiné aux imports et aux
-diagnostics vérifie tous les identifiants, doublons, rangs et relations de tas.
-Le chemin chaud vérifie en temps constant l’enveloppe et la racine, puis chaque
-nœud touché par la transition en `O(log n)`. Il ne reparcourt donc jamais le
-monde entier à chaque batch. Un acteur dormant (`LOD3`) possède
+forme du tas gauchiste. Chaque hydratation de runner depuis PostgreSQL exécute
+une validation exhaustive qui vérifie tous les identifiants, doublons, rangs,
+relations de tas et l’égalité avec `WorldState.entities`. Les batches suivants
+du même runner réutilisent l’instantané immuable validé : leur chemin chaud
+vérifie en temps constant l’enveloppe et la racine, puis chaque nœud touché par
+la transition en `O(log n)`. Il ne reparcourt donc jamais le monde entier à
+chaque activation. Un appel isolé à `runWorldSchedulerBatch` crée son propre
+runner et valide également son hydratation. Un acteur dormant (`LOD3`) possède
 `dueMinute: null` et reste après toutes les entrées actives jusqu’à un réveil
 explicite.
 
@@ -166,10 +169,13 @@ un monde explicite et les paramètres suivants :
 
 Le worker n’utilise jamais l’heure murale pour ordonner les acteurs. Un
 superviseur externe peut invoquer ce programme ponctuellement ou
-périodiquement ; l’invocation elle-même reste bornée et rejouable. Chaque batch
-charge l’instantané persistant et toutes les écritures passent par
-`ActionCommitPort`. Un conflit OCC interrompt le worker sans retry implicite :
-un nouvel appel repart du dernier état validé.
+périodiquement ; l’invocation elle-même reste bornée et rejouable. Le runner
+charge et valide exhaustivement l’instantané une fois, puis conserve localement
+le résultat immuable de chaque commit réussi. Toutes les écritures passent par
+`ActionCommitPort`, dont l’OCC reste contrôlé à chaque activation. Un conflit
+interrompt le worker sans retry implicite et son rapport inclut aussi le budget
+et les activations déjà persistées dans le batch partiellement réussi ; un
+nouvel appel repart du dernier état PostgreSQL validé.
 
 Ce choix sépare l’ordonnancement déterministe interne du mécanisme de réveil du
 processus, qui dépend nécessairement du déploiement. Il évite de cacher un

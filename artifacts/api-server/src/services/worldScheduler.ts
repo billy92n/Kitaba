@@ -11,6 +11,7 @@ import {
   SchedulerInvariantError,
   selectScheduledActivation,
   type SchedulerFailureCode,
+  validateWorldSchedulerState,
 } from "../engine/worldScheduler.js";
 import { narrateFromPerception } from "../llm/narrateResult.js";
 import {
@@ -45,6 +46,7 @@ export type WorldSchedulerBatchResult =
       remainingBudget: number;
       activations: CompletedScheduledActivation[];
       worldState: AutonomousSessionSnapshot["worldState"];
+      narrativeHistory: AutonomousSessionSnapshot["narrativeHistory"];
     }
   | { status: "NOT_FOUND"; code: "SESSION_NOT_FOUND" }
   | {
@@ -64,7 +66,7 @@ export type WorldSchedulerBatchResult =
       activations: CompletedScheduledActivation[];
     };
 
-async function createDefaultDependencies(): Promise<WorldSchedulerBatchDependencies> {
+export async function createDefaultWorldSchedulerDependencies(): Promise<WorldSchedulerBatchDependencies> {
   const [{ loadSession }, { postgresActionCommitPort }] = await Promise.all([
     import("../persistence/worldRepository.js"),
     import("./postgresActionCommit.js"),
@@ -124,22 +126,31 @@ function turnDependencies(
   };
 }
 
-export async function runWorldSchedulerBatch(
-  sessionId: string,
+async function runWorldSchedulerBatchFromSnapshot(
+  initialSession: AutonomousSessionSnapshot,
   config: WorldSchedulerBatchConfig,
-  dependencies?: WorldSchedulerBatchDependencies,
+  effectiveDependencies: WorldSchedulerBatchDependencies,
+  exhaustiveHydrationValidation: boolean,
 ): Promise<WorldSchedulerBatchResult> {
-  const effectiveDependencies =
-    dependencies ?? (await createDefaultDependencies());
-  let session = await effectiveDependencies.loadSession(sessionId);
-  if (!session) return { status: "NOT_FOUND", code: "SESSION_NOT_FOUND" };
+  let session = initialSession;
+  const sessionId = session.id;
 
   let schedulerConfig;
   try {
     schedulerConfig = resolveWorldSchedulerConfig(config);
+    const scheduledWorld = ensureWorldScheduler(
+      session.worldState,
+      config.seed,
+    );
+    if (exhaustiveHydrationValidation) {
+      validateWorldSchedulerState(
+        scheduledWorld.scheduler,
+        Object.keys(scheduledWorld.entities),
+      );
+    }
     session = {
       ...session,
-      worldState: ensureWorldScheduler(session.worldState, config.seed),
+      worldState: scheduledWorld,
     };
   } catch (error) {
     if (error instanceof SchedulerInvariantError) {
@@ -175,6 +186,7 @@ export async function runWorldSchedulerBatch(
         remainingBudget,
         activations: completed,
         worldState: session.worldState,
+        narrativeHistory: session.narrativeHistory,
       };
     }
     if (visitedActorIds.has(activation.actorId)) {
@@ -185,6 +197,7 @@ export async function runWorldSchedulerBatch(
         remainingBudget,
         activations: completed,
         worldState: session.worldState,
+        narrativeHistory: session.narrativeHistory,
       };
     }
     if (activation.budgetCost > remainingBudget) {
@@ -195,6 +208,7 @@ export async function runWorldSchedulerBatch(
         remainingBudget,
         activations: completed,
         worldState: session.worldState,
+        narrativeHistory: session.narrativeHistory,
       };
     }
 
@@ -248,4 +262,57 @@ export async function runWorldSchedulerBatch(
       narrativeHistory: turn.narrativeHistory,
     };
   }
+}
+
+export type WorldSchedulerBatchRunner =
+  () => Promise<WorldSchedulerBatchResult>;
+
+/**
+ * Hydrates and exhaustively validates one persisted world once. Successful
+ * batches then reuse the trusted immutable snapshot locally, while every
+ * commit still performs OCC against PostgreSQL. A conflict terminates the
+ * runner's useful lifetime and must be handled by creating a fresh runner.
+ */
+export async function createWorldSchedulerBatchRunner(
+  sessionId: string,
+  config: WorldSchedulerBatchConfig,
+  dependencies?: WorldSchedulerBatchDependencies,
+): Promise<WorldSchedulerBatchRunner> {
+  const effectiveDependencies =
+    dependencies ?? (await createDefaultWorldSchedulerDependencies());
+  let session = await effectiveDependencies.loadSession(sessionId);
+  let firstBatch = true;
+
+  return async () => {
+    if (!session) return { status: "NOT_FOUND", code: "SESSION_NOT_FOUND" };
+    const result = await runWorldSchedulerBatchFromSnapshot(
+      session,
+      config,
+      effectiveDependencies,
+      firstBatch,
+    );
+    firstBatch = false;
+    if (result.status === "COMPLETED") {
+      session = {
+        ...session,
+        worldVersion: result.worldState.worldVersion,
+        worldState: result.worldState,
+        narrativeHistory: result.narrativeHistory,
+      };
+    }
+    return result;
+  };
+}
+
+export async function runWorldSchedulerBatch(
+  sessionId: string,
+  config: WorldSchedulerBatchConfig,
+  dependencies?: WorldSchedulerBatchDependencies,
+): Promise<WorldSchedulerBatchResult> {
+  const runner = await createWorldSchedulerBatchRunner(
+    sessionId,
+    config,
+    dependencies,
+  );
+  return runner();
 }
