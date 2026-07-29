@@ -257,6 +257,102 @@ describe("contrats du moteur", () => {
     expect(JSON.stringify(result.actionOutcome)).not.toContain("alim");
   });
 
+  it.each(["move", "take", "examine", "eat"] as const)(
+    "refuse l'ambiguïté pour %s",
+    (actionType) => {
+      const state = createInitialWorldState("Yara");
+      let actorId = "hamid";
+      let targetName = "double";
+      if (actionType === "move") {
+        state.locations.double_a = {
+          ...state.locations.place_centrale,
+          id: "double_a",
+          name: "Double",
+        };
+        state.locations.double_b = {
+          ...state.locations.place_centrale,
+          id: "double_b",
+          name: "Double",
+        };
+      } else if (actionType === "eat") {
+        actorId = "tariq";
+        state.objects.double_a = {
+          ...state.objects.pain_taverne,
+          id: "double_a",
+          name: "Double",
+        };
+        state.objects.double_b = {
+          ...state.objects.pain_taverne,
+          id: "double_b",
+          name: "Double",
+        };
+        state.entities.tariq = {
+          ...state.entities.tariq,
+          inventory: ["double_a", "double_b"],
+        };
+      } else {
+        state.objects.double_a = {
+          ...state.objects.minerai_fer,
+          id: "double_a",
+          name: "Double",
+        };
+        state.objects.double_b = {
+          ...state.objects.minerai_fer,
+          id: "double_b",
+          name: "Double",
+        };
+        state.locations.forge_hamid = {
+          ...state.locations.forge_hamid,
+          presentObjects: [
+            ...state.locations.forge_hamid.presentObjects,
+            "double_a",
+            "double_b",
+          ],
+        };
+      }
+      expect(
+        resolveAction(
+          state,
+          actorId,
+          action(actionType, targetName),
+          deterministic,
+        ),
+      ).toMatchObject({
+        success: false,
+        failureCode: "TARGET_AMBIGUOUS",
+        newWorldState: state,
+      });
+    },
+  );
+
+  it("couvre les valeurs optionnelles et plafonds de eat/examine", () => {
+    const noHunger = createInitialWorldState("Yara");
+    noHunger.entities.tariq = {
+      ...noHunger.entities.tariq,
+      hunger: undefined,
+    };
+    expect(
+      resolveAction(noHunger, "tariq", action("eat", "pain"), deterministic)
+        .newWorldState.entities.tariq.hunger,
+    ).toBe(79.375);
+
+    const capped = createInitialWorldState("Yara");
+    capped.entities.tariq = { ...capped.entities.tariq, hunger: 90 };
+    expect(
+      resolveAction(capped, "tariq", action("eat", "pain"), deterministic)
+        .newWorldState.entities.tariq.hunger,
+    ).toBe(99.375);
+
+    const examined = resolveAction(
+      createInitialWorldState("Yara"),
+      "hamid",
+      action("examine", null),
+      deterministic,
+    );
+    expect(examined.success).toBe(true);
+    expect(examined.event.targetId).toBeNull();
+  });
+
   it("accumule exactement les durées courtes et les fractions héritées", () => {
     let tenth: WorldTime = {
       year: 1,
