@@ -1,14 +1,15 @@
 // tests/persistence.test.ts
 // Prouve que : recharger la page conserve la progression
-//              une action réussie crée un événement persistant (vérifié via mocks)
+//              une action rÃ©ussie crÃ©e un Ã©vÃ©nement persistant (vÃ©rifiÃ© via mocks)
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createInitialWorldState } from "../worldSeed.js";
 import { resolveAction } from "../engine/actionResolver.js";
 import type { StructuredAction } from "../domain/actions.js";
 
-// Ces tests vérifient la logique de persistance sans toucher à la vraie DB.
-// Le worldVersion est la clé d'idempotence : un doublon = même version → rejeté.
+// Ces tests vÃ©rifient la logique de persistance sans toucher Ã  la vraie DB.
+// worldVersion dÃ©crit uniquement les mutations du monde. Les identifiants UUID
+// distinguent les tentatives refusÃ©es qui peuvent partager la mÃªme version.
 
 function makeAction(overrides: Partial<StructuredAction>): StructuredAction {
   return {
@@ -20,8 +21,8 @@ function makeAction(overrides: Partial<StructuredAction>): StructuredAction {
   };
 }
 
-describe("persistance — logique de cohérence", () => {
-  it("chaque action réussie incrémente worldVersion de 1 exactement", () => {
+describe("persistance â€” logique de cohÃ©rence", () => {
+  it("chaque action rÃ©ussie incrÃ©mente worldVersion de 1 exactement", () => {
     let state = createInitialWorldState("Reza");
 
     const actions: StructuredAction[] = [
@@ -40,11 +41,11 @@ describe("persistance — logique de cohérence", () => {
     }
   });
 
-  it("une action bloquée ne change pas worldVersion", () => {
+  it("une action bloquÃ©e ne change pas worldVersion", () => {
     const state = createInitialWorldState("Reza");
     const action = makeAction({
       actionType: "move",
-      targetName: "château_invisible",
+      targetName: "chÃ¢teau_invisible",
     });
 
     const result = resolveAction(state, state.controlledEntityId, action);
@@ -53,7 +54,29 @@ describe("persistance — logique de cohérence", () => {
     expect(result.newWorldState.worldVersion).toBe(state.worldVersion);
   });
 
-  it("l'état après deux actions est reproductible (déterminisme)", () => {
+  it("plusieurs refus restent auditables sans prÃ©tendre crÃ©er une version", () => {
+    const state = createInitialWorldState("Reza");
+    const eventIds = ["refusal-1", "refusal-2"];
+    const results = eventIds.map((eventId) =>
+      resolveAction(
+        state,
+        state.controlledEntityId,
+        makeAction({ actionType: "give", targetName: "pain" }),
+        { createEventId: () => eventId },
+      ),
+    );
+    expect(results.map(({ success }) => success)).toEqual([false, false]);
+    expect(results.map(({ event }) => event.id)).toEqual(eventIds);
+    expect(results.map(({ event }) => event.worldVersion)).toEqual([0, 0]);
+    expect(
+      results.every(({ event }) => event.description.startsWith("[BLOQUÃ‰]")),
+    ).toBe(true);
+    expect(results.every(({ newWorldState }) => newWorldState === state)).toBe(
+      true,
+    );
+  });
+
+  it("l'Ã©tat aprÃ¨s deux actions est reproductible (dÃ©terminisme)", () => {
     function playThrough(playerName: string) {
       let state = createInitialWorldState(playerName);
       const actions = [
@@ -70,14 +93,14 @@ describe("persistance — logique de cohérence", () => {
     const stateA = playThrough("Saba");
     const stateB = playThrough("Saba");
 
-    // L'entité contrôlée doit être au même endroit dans les deux runs
+    // L'entitÃ© contrÃ´lÃ©e doit Ãªtre au mÃªme endroit dans les deux runs
     const entityA = stateA.entities[stateA.controlledEntityId];
     const entityB = stateB.entities[stateB.controlledEntityId];
     expect(entityA.locationId).toBe(entityB.locationId);
     expect(stateA.worldVersion).toBe(stateB.worldVersion);
   });
 
-  it("worldState contient controlledEntityId — pas de champ 'player' séparé", () => {
+  it("worldState contient controlledEntityId â€” pas de champ 'player' sÃ©parÃ©", () => {
     const state = createInitialWorldState("Nour");
 
     expect(state).toHaveProperty("controlledEntityId");
@@ -85,7 +108,7 @@ describe("persistance — logique de cohérence", () => {
     expect(state.entities).toHaveProperty(state.controlledEntityId);
   });
 
-  it("les événements portent le worldVersion de l'état APRÈS l'action", () => {
+  it("les Ã©vÃ©nements portent le worldVersion de l'Ã©tat APRÃˆS l'action", () => {
     const state = createInitialWorldState("Nour");
     const action = makeAction({ actionType: "move", targetName: "forge" });
 
@@ -96,3 +119,4 @@ describe("persistance — logique de cohérence", () => {
     }
   });
 });
+
