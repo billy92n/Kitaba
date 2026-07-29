@@ -9,7 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --configLoader runner",
-    "test:coverage": "vitest run --configLoader runner --coverage --coverage.include=src/engine/**/*.ts --coverage.reporter=text --coverage.thresholds.functions=100 --coverage.thresholds.lines=100 --coverage.thresholds.branches=90"
+    "test:coverage": "vitest run --configLoader runner --coverage --coverage.include=src/engine/**/*.ts --coverage.reporter=text --coverage.thresholds.functions=100 --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.branches=100"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
@@ -35,3 +35,4 @@
     "vitest": "^4.1.10"
   }
 }
+
