@@ -68,7 +68,7 @@ export function buildPerceptibleFacts(
   const presentEntities = location.presentEntities.flatMap((id) => {
     if (id === observer.id) return [];
     const entity = state.entities[id];
-    return entity
+    return entity && entity.locationId === observer.locationId
       ? [
           {
             name: entity.name,
@@ -80,13 +80,15 @@ export function buildPerceptibleFacts(
   });
   const presentObjects = location.presentObjects.flatMap((id) => {
     const object = state.objects[id];
-    return object
+    return object &&
+      object.ownerId === null &&
+      object.locationId === observer.locationId
       ? [{ name: object.name, description: object.description }]
       : [];
   });
   const inventoryObjects = observer.inventory.flatMap((id) => {
     const object = state.objects[id];
-    return object
+    return object && object.ownerId === observer.id
       ? [{ name: object.name, description: object.description }]
       : [];
   });
