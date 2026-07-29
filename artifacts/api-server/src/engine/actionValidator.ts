@@ -19,6 +19,9 @@ export type ActionFailureCode =
   | "ACTOR_NOT_FOUND"
   | "ACTOR_LOCATION_NOT_FOUND"
   | "TARGET_NOT_FOUND"
+  | "TARGET_AMBIGUOUS"
+  | "OBJECT_NOT_EDIBLE"
+  | "ACTION_NOT_IMPLEMENTED"
   | "ACTION_NOT_ALLOWED";
 
 export interface ActionFailure {
@@ -26,6 +29,7 @@ export interface ActionFailure {
   code: ActionFailureCode;
   reason: string;
   actor: Entity | null;
+  candidateIds?: string[];
 }
 
 interface BaseContext {
@@ -43,7 +47,7 @@ export type ValidatedActionContext =
       availability: ObjectAvailability;
     })
   | (BaseContext & { kind: "EXAMINE"; target: ResolvedInspectable | null })
-  | (BaseContext & { kind: "SLEEP" | "GIVE" | "USE"; target: null });
+  | (BaseContext & { kind: "SLEEP"; target: null });
 
 export interface ActionValidationSuccess {
   possible: true;
@@ -56,8 +60,18 @@ function fail(
   code: ActionFailureCode,
   reason: string,
   actor: Entity | null,
+  candidateIds?: string[],
 ): ActionFailure {
-  return { possible: false, code, reason, actor };
+  return { possible: false, code, reason, actor, candidateIds };
+}
+
+function ambiguous(actor: Entity, candidateIds: string[]): ActionFailure {
+  return fail(
+    "TARGET_AMBIGUOUS",
+    "La cible demandÃ©e est ambiguÃ«.",
+    actor,
+    candidateIds,
+  );
 }
 
 export function validateAction(
@@ -81,32 +95,38 @@ export function validateAction(
   switch (action.actionType) {
     case "move": {
       const target = findLocationByQuery(state, action.targetName);
-      if (!target) {
+      if (target.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
-          `Vous ne savez pas comment aller à "${action.targetName ?? "?"}".`,
+          `Vous ne savez pas comment aller Ã  "${action.targetName ?? "?"}".`,
           actor,
         );
       }
-      if (target.id === actor.locationId) {
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
+      if (target.target.id === actor.locationId) {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `Vous êtes déjà à ${target.name}.`,
+          `Vous Ãªtes dÃ©jÃ  Ã  ${target.target.name}.`,
           actor,
         );
       }
-      if (!location.connectedLocations.includes(target.id)) {
+      if (!location.connectedLocations.includes(target.target.id)) {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `${target.name} n'est pas directement accessible depuis ${location.name}.`,
+          `${target.target.name} n'est pas directement accessible depuis ${location.name}.`,
           actor,
         );
       }
-      return { possible: true, context: { ...base, kind: "MOVE", target } };
+      return {
+        possible: true,
+        context: { ...base, kind: "MOVE", target: target.target },
+      };
     }
     case "speak": {
       if (!action.targetName) {
-        return fail("TARGET_NOT_FOUND", "À qui voulez-vous parler ?", actor);
+        return fail("TARGET_NOT_FOUND", "Ã€ qui voulez-vous parler ?", actor);
       }
       const target = findEntityAtLocation(
         state,
@@ -114,8 +134,14 @@ export function validateAction(
         actor.locationId,
         action.targetName,
       );
-      return target
-        ? { possible: true, context: { ...base, kind: "SPEAK", target } }
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
+      return target.status === "FOUND"
+        ? {
+            possible: true,
+            context: { ...base, kind: "SPEAK", target: target.target },
+          }
         : fail(
             "TARGET_NOT_FOUND",
             `Personne du nom de "${action.targetName}" n'est ici.`,
@@ -128,17 +154,20 @@ export function validateAction(
         actorId,
         action.targetName,
       );
-      if (!resolved) {
+      if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
           `Vous ne voyez pas "${action.targetName ?? "cet objet"}" ici.`,
           actor,
         );
       }
-      if (resolved.availability === "ACTOR_INVENTORY") {
+      if (resolved.status === "AMBIGUOUS") {
+        return ambiguous(actor, resolved.candidateIds);
+      }
+      if (resolved.target.availability === "ACTOR_INVENTORY") {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `Vous avez déjà ${resolved.object.name} dans vos affaires.`,
+          `Vous avez dÃ©jÃ  ${resolved.target.object.name} dans vos affaires.`,
           actor,
         );
       }
@@ -147,37 +176,52 @@ export function validateAction(
         context: {
           ...base,
           kind: "TAKE",
-          target: resolved.object,
-          availability: resolved.availability,
+          target: resolved.target.object,
+          availability: resolved.target.availability,
         },
       };
     }
-    case "examine":
+    case "examine": {
+      const target = findInspectable(state, actorId, action.targetName);
+      if (target.status === "AMBIGUOUS") {
+        return ambiguous(actor, target.candidateIds);
+      }
       return {
         possible: true,
         context: {
           ...base,
           kind: "EXAMINE",
-          target: findInspectable(state, actorId, action.targetName),
+          target: target.status === "FOUND" ? target.target : null,
         },
       };
+    }
     case "eat": {
       const resolved = resolveObjectInActorContext(
         state,
         actorId,
         action.targetName,
       );
-      if (!resolved) {
+      if (resolved.status === "MISSING") {
         return fail(
           "TARGET_NOT_FOUND",
           `Vous n'avez pas "${action.targetName ?? "de quoi manger"}" sur vous.`,
           actor,
         );
       }
-      if (resolved.availability !== "ACTOR_INVENTORY") {
+      if (resolved.status === "AMBIGUOUS") {
+        return ambiguous(actor, resolved.candidateIds);
+      }
+      if (resolved.target.availability !== "ACTOR_INVENTORY") {
         return fail(
           "ACTION_NOT_ALLOWED",
-          `${resolved.object.name} ne vous appartient pas.`,
+          `${resolved.target.object.name} ne vous appartient pas.`,
+          actor,
+        );
+      }
+      if (resolved.target.object.properties.edible !== true) {
+        return fail(
+          "OBJECT_NOT_EDIBLE",
+          `${resolved.target.object.name} n'est pas comestible.`,
           actor,
         );
       }
@@ -186,8 +230,8 @@ export function validateAction(
         context: {
           ...base,
           kind: "EAT",
-          target: resolved.object,
-          availability: resolved.availability,
+          target: resolved.target.object,
+          availability: resolved.target.availability,
         },
       };
     }
@@ -197,22 +241,16 @@ export function validateAction(
         context: { ...base, kind: "SLEEP", target: null },
       };
     case "give":
-      return action.targetName
-        ? { possible: true, context: { ...base, kind: "GIVE", target: null } }
-        : fail(
-            "TARGET_NOT_FOUND",
-            "À qui voulez-vous donner, et quoi ?",
-            actor,
-          );
     case "use":
-      return {
-        possible: true,
-        context: { ...base, kind: "USE", target: null },
-      };
+      return fail(
+        "ACTION_NOT_IMPLEMENTED",
+        `L'action ${action.actionType} n'est pas encore implÃ©mentÃ©e.`,
+        actor,
+      );
     case "attack":
       return fail(
         "ACTION_NOT_ALLOWED",
-        "La violence n'est pas implémentée dans cette version du monde.",
+        "La violence n'est pas implÃ©mentÃ©e dans cette version du monde.",
         actor,
       );
     case "unknown":
@@ -223,3 +261,4 @@ export function validateAction(
       );
   }
 }
+
