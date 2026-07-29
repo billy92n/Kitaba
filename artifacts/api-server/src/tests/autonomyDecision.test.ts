@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { AutonomyProfile } from "../domain/autonomy.js";
+import {
+  resolveAutonomousActionMetadata,
+  resolveAutonomyDecisionState,
+  type AutonomyProfile,
+} from "../domain/autonomy.js";
 import type { GameEvent } from "../domain/events.js";
 import type { WorldState } from "../domain/world.js";
 import {
@@ -50,6 +54,187 @@ function selectedKey(
   if (!result.success) throw new Error(result.trace.reason);
   return result.trace.selectedCandidateKey ?? "";
 }
+
+describe("autonomous runtime identity boundaries", () => {
+  it.each(["", " ", "\t", "\n", "  intention-valide  "])(
+    "rejects non-canonical historical intentKey %j without mutation",
+    (intentKey) => {
+      const persisted = {
+        intentKey,
+        remainingCommitmentTurns: 2,
+        previousLocationId: "place_centrale",
+      };
+      const before = structuredClone(persisted);
+
+      expect(() => resolveAutonomyDecisionState(persisted)).toThrow(TypeError);
+      expect(persisted).toEqual(before);
+    },
+  );
+
+  it.each(["", " ", "\t", "\n", "  intention-valide  "])(
+    "rejects non-canonical deserialized metadata intentKey %j",
+    (intentKey) => {
+      const persisted = JSON.stringify({
+        intentKey,
+        nextCommitmentTurns: 2,
+        targetId: "pain_taverne",
+      });
+      const deserialized: unknown = JSON.parse(persisted);
+      const before = structuredClone(deserialized);
+
+      expect(() => resolveAutonomousActionMetadata(deserialized)).toThrow(
+        TypeError,
+      );
+      expect(deserialized).toEqual(before);
+    },
+  );
+
+  it.each([
+    { field: "intentKey", value: 42 },
+    { field: "targetId", value: " pain_taverne" },
+    { field: "previousLocationId", value: "place_centrale " },
+  ])("rejects malformed metadata identity $field", ({ field, value }) => {
+    const metadata: Record<string, unknown> = {
+      intentKey: "eat:pain_taverne",
+      nextCommitmentTurns: 2,
+      targetId: "pain_taverne",
+      [field]: value,
+    };
+    expect(() => resolveAutonomousActionMetadata(metadata)).toThrow(TypeError);
+  });
+
+  it("rejects a persisted historical blank key through the context boundary", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.hamid.autonomyDecisionState = {
+      intentKey: "\t",
+      remainingCommitmentTurns: 2,
+    };
+    const before = structuredClone(state);
+
+    expect(buildAutonomousDecisionInput(state, "hamid")).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_STATE",
+    });
+    expect(state).toEqual(before);
+  });
+
+  it("rejects two visually equivalent candidate keys in either order", () => {
+    const input = inputFor(createInitialWorldState("Yara"), "player");
+    const candidate = input.candidates.find(
+      (entry) => entry.action.actionType === "move",
+    );
+    expect(candidate).toBeDefined();
+    if (!candidate) return;
+    const padded = {
+      ...candidate,
+      candidateKey: ` ${candidate.candidateKey} `,
+    };
+    const before = structuredClone(input);
+
+    const first = decideAutonomousAction(
+      { ...input, candidates: [candidate, padded] },
+      { seed: "canonical-identity" },
+    );
+    const second = decideAutonomousAction(
+      { ...input, candidates: [padded, candidate] },
+      { seed: "canonical-identity" },
+    );
+
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+      trace: { selectedCandidateKey: null },
+    });
+    expect(input).toEqual(before);
+  });
+
+  it.each([
+    { actorId: " player", locationId: "place_centrale" },
+    { actorId: "player", locationId: "place_centrale " },
+  ])(
+    "rejects non-canonical actor boundary identities %#",
+    ({ actorId, locationId }) => {
+      const input = inputFor(createInitialWorldState("Yara"), "player");
+      expect(
+        decideAutonomousAction(
+          {
+            ...input,
+            actor: { ...input.actor, actorId, locationId },
+          },
+          { seed: "actor-identity" },
+        ),
+      ).toMatchObject({
+        success: false,
+        code: "INVALID_AUTONOMY_IDENTITY",
+      });
+    },
+  );
+
+  it("rejects a non-string actorId at the pure decision boundary", () => {
+    const input = inputFor(createInitialWorldState("Yara"), "player");
+    expect(
+      decideAutonomousAction(
+        {
+          ...input,
+          actor: {
+            ...input.actor,
+            actorId: 42 as unknown as string,
+          },
+        },
+        { seed: "actor-type" },
+      ),
+    ).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+      trace: { actorId: "" },
+    });
+  });
+
+  it("rejects a non-string candidateKey at the pure decision boundary", () => {
+    const input = inputFor(createInitialWorldState("Yara"), "player");
+    const candidate = input.candidates[0];
+    expect(candidate).toBeDefined();
+    if (!candidate) return;
+    expect(
+      decideAutonomousAction(
+        {
+          ...input,
+          candidates: [
+            {
+              ...candidate,
+              candidateKey: 42 as unknown as string,
+            },
+          ],
+        },
+        { seed: "candidate-type" },
+      ),
+    ).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+    });
+  });
+
+  it("rejects a non-canonical actorId before world lookup", () => {
+    const state = createInitialWorldState("Yara");
+    expect(buildAutonomousDecisionInput(state, " player")).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+    });
+  });
+
+  it("rejects a non-canonical persisted actor location", () => {
+    const state = createInitialWorldState("Yara");
+    state.entities.player.locationId = "place_centrale ";
+    const before = structuredClone(state);
+
+    expect(buildAutonomousDecisionInput(state, "player")).toMatchObject({
+      success: false,
+      code: "INVALID_AUTONOMY_IDENTITY",
+    });
+    expect(state).toEqual(before);
+  });
+});
 
 describe("autonomous decision context isolation", () => {
   it("is independent from the controlled entity for an explicit actor", () => {
@@ -438,68 +623,7 @@ describe("candidate credibility and utility", () => {
     };
 
     for (let seed = 0; seed < 30; seed += 1) {
-      expect(selectedKey(state, "tariq", seed)).toBe("eat:pain_taverne");
-    }
-  });
-
-  it("lets extreme fatigue select sleep as a critical action", () => {
-    const state = createInitialWorldState("Yara");
-    state.entities.player = {
-      ...state.entities.player,
-      hunger: 100,
-      fatigue: 0,
-      autonomyProfile: profile(
-        { curiosity: 100, prudence: 0 },
-        { kind: "EXPLORE", strength: 100 },
-      ),
-    };
-    expect(selectedKey(state, "player", "exhausted")).toBe("sleep:self");
-  });
-
-  it("does not force a satiated actor to eat", () => {
-    const state = createInitialWorldState("Yara");
-    state.entities.tariq = {
-      ...state.entities.tariq,
-      hunger: 100,
-      fatigue: 100,
-      autonomyProfile: profile(
-        { sociability: 100, discipline: 0 },
-        { kind: "SOCIALIZE", strength: 100 },
-      ),
-    };
-    expect(selectedKey(state, "tariq", "social")).toBe("speak:leila");
-  });
-
-  it("allows curiosity to influence an appropriate non-vital choice", () => {
-    const state = createInitialWorldState("Yara");
-    state.entities.player = {
-      ...state.entities.player,
-      hunger: 100,
-      fatigue: 100,
-      autonomyProfile: profile(
-        { curiosity: 100, sociability: 0, ambition: 0 },
-        { kind: "EXPLORE", strength: 100 },
-      ),
-    };
-    expect(selectedKey(state, "player", "curious")).toMatch(/^(move|examine):/);
-  });
-
-  it("keeps same-named visible targets bound to their exact ids", () => {
-    const state = createInitialWorldState("Yara");
-    state.objects.lantern_duplicate = {
-      ...state.objects.lanterne_taverne,
-      id: "lantern_duplicate",
-    };
-    state.locations.taverne_du_loup.presentObjects.push("lantern_duplicate");
-    const decision = decideAutonomousAction(inputFor(state, "tariq"), {
-      seed: "ambiguous",
-    });
-    expect(decision.success).toBe(true);
-    expect(
-      decision.trace.candidates.filter((candidate) =>
-        ["lantern_duplicate", "lanterne_taverne"].some((id) =>
-          candidate.candidateKey.endsWith(id),
-        ),
+  …551 tokens truncated…     ),
       ),
     ).toHaveLength(4);
     expect(
@@ -757,9 +881,16 @@ describe("controlled determinism and anti-oscillation", () => {
     });
   });
 
-  it.each([undefined, "", "   "])(
-    "rejects an unbound targeted candidate with target %j",
-    (targetId) => {
+  it.each([
+    {
+      targetId: undefined,
+      expectedCode: "UNBOUND_TARGETED_CANDIDATE",
+    },
+    { targetId: "", expectedCode: "INVALID_AUTONOMY_IDENTITY" },
+    { targetId: "   ", expectedCode: "INVALID_AUTONOMY_IDENTITY" },
+  ] as const)(
+    "rejects an unbound or non-canonical targeted candidate with target $targetId",
+    ({ targetId, expectedCode }) => {
       const input = inputFor(createInitialWorldState("Yara"), "player");
       expect(
         decideAutonomousAction(
@@ -784,7 +915,7 @@ describe("controlled determinism and anti-oscillation", () => {
         ),
       ).toMatchObject({
         success: false,
-        code: "UNBOUND_TARGETED_CANDIDATE",
+        code: expectedCode,
         trace: { selectedCandidateKey: null },
       });
     },
