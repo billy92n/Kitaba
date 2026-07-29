@@ -134,10 +134,23 @@ describe("PostgreSQL autonomous optimistic concurrency", () => {
     ]);
 
     expect(results.sort()).toEqual(["COMMITTED", "CONFLICT"]);
-    expect(await db.select().from(kitabaEventsTable)).toHaveLength(1);
-    expect(await db.select().from(kitabaSavesTable)).toHaveLength(1);
-    expect(await db.select().from(kitabaSessionsTable)).toMatchObject([
-      { id: sessionId, worldVersion: 1 },
-    ]);
+    expect(
+      await db
+        .select()
+        .from(kitabaEventsTable)
+        .where(eq(kitabaEventsTable.sessionId, sessionId)),
+    ).toHaveLength(1);
+    expect(
+      await db
+        .select()
+        .from(kitabaSavesTable)
+        .where(eq(kitabaSavesTable.sessionId, sessionId)),
+    ).toHaveLength(1);
+    expect(
+      await db
+        .select()
+        .from(kitabaSessionsTable)
+        .where(eq(kitabaSessionsTable.id, sessionId)),
+    ).toMatchObject([{ id: sessionId, worldVersion: 1 }]);
   });
 });
