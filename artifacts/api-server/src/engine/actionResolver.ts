@@ -83,8 +83,23 @@ export function resolveAction(
     consequence.actorAfter,
     action.actionType,
   );
+  const stateAfterAutonomy = action.autonomy
+    ? {
+        ...stateAfterTime,
+        entities: {
+          ...stateAfterTime.entities,
+          [actorId]: {
+            ...stateAfterTime.entities[actorId],
+            autonomyDecisionState: {
+              intentKey: action.autonomy.intentKey,
+              remainingCommitmentTurns: action.autonomy.nextCommitmentTurns,
+            },
+          },
+        },
+      }
+    : stateAfterTime;
   const newWorldState: WorldState = {
-    ...stateAfterTime,
+    ...stateAfterAutonomy,
     worldVersion: state.worldVersion + 1,
   };
 
@@ -101,7 +116,12 @@ export function resolveAction(
       locationId: validation.context.location.id,
       targetId: consequence.targetId,
       description: `${validation.context.actor.name} : ${action.actionType} → ${action.targetName ?? "—"}`,
-      consequences: consequence.consequences,
+      consequences: action.autonomy
+        ? [
+            ...consequence.consequences,
+            `Autonomous intent ${action.autonomy.intentKey} committed for ${actorId}.`,
+          ]
+        : consequence.consequences,
       // Convention : instant du monde avant l'application du coût temporel.
       occurredAt: state.time,
       status: "APPLIED",
