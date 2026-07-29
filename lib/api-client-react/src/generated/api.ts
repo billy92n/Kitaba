@@ -23,6 +23,7 @@ import type {
   ActionRequest,
   ActionResponse,
   BadRequestResponse,
+  ConflictResponse,
   GameSessionResponse,
   HealthStatus,
   InternalServerErrorResponse,
@@ -238,7 +239,7 @@ export const submitAction = async (actionRequest: ActionRequest, options?: Reque
 
 
 
-export const getSubmitActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
+export const getSubmitActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext> => {
 
@@ -267,12 +268,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SubmitActionMutationResult = NonNullable<Awaited<ReturnType<typeof submitAction>>>
     export type SubmitActionMutationBody = BodyType<ActionRequest>
-    export type SubmitActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>
+    export type SubmitActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | InternalServerErrorResponse>
 
     /**
  * @summary Submit a player action
  */
-export const useSubmitAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | InternalServerErrorResponse>,
+export const useSubmitAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | InternalServerErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAction>>, TError,{data: BodyType<ActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof submitAction>>,
