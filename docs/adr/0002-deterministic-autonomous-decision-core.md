@@ -165,6 +165,14 @@ events and the autonomous commitment state. The service commits through
 - Ties are resolved by the stable candidate key, never insertion order or locale.
 - Candidate keys are required to be unique; malformed duplicate input is refused
   explicitly rather than inheriting stable-sort insertion order.
+- Runtime semantic identities owned by this autonomy boundary (`actorId`,
+  `locationId`, `candidateKey`, `intentKey`, `targetId` and
+  `previousLocationId`) follow a reject-only canonical contract: they must be
+  non-empty strings and must already equal their trimmed form. Blank values and
+  peripheral whitespace are rejected; the boundary never rewrites an identity.
+  Consequently, `"action"` and `" action "` cannot become two persisted
+  intentions. Free-form labels and the caller-provided deterministic seed are not
+  semantic identities and are outside this rule.
 
 The integer weights express a deliberately small hierarchy rather than learned
 probabilities:
