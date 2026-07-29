@@ -18,6 +18,21 @@ describe("normalisation des cibles", () => {
   ])("normalise %j en %j", (input, expected) => {
     expect(normalizeTarget(input)).toBe(expected);
   });
+
+  it("couvre requête nulle, article seul et correspondance d'identifiant", () => {
+    const state = createInitialWorldState("Yara");
+    expect(findLocationByQuery(state, null)).toEqual({ status: "MISSING" });
+    expect(findLocationByQuery(state, "la")).toEqual({ status: "MISSING" });
+    state.locations.hidden_needle = {
+      ...state.locations.place_centrale,
+      id: "hidden_needle",
+      name: "Opaque",
+    };
+    expect(findLocationByQuery(state, "needle")).toMatchObject({
+      status: "FOUND",
+      target: { id: "hidden_needle" },
+    });
+  });
 });
 
 describe("résolution discriminée et stable", () => {
@@ -112,6 +127,13 @@ describe("résolution discriminée et stable", () => {
     state.locations.taverne_du_loup = {
       ...state.locations.taverne_du_loup,
       connectedLocations: ["missing"],
+    };
+    expect(findInspectable(state, "tariq", "place")).toEqual({
+      status: "MISSING",
+    });
+    state.entities.tariq = {
+      ...state.entities.tariq,
+      locationId: "missing",
     };
     expect(findInspectable(state, "tariq", "place")).toEqual({
       status: "MISSING",
