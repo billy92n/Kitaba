@@ -13,8 +13,8 @@ vi.mock("drizzle-orm", () => ({ eq: vi.fn() }));
 const { appendNarrativeEntry, bindEventToSession } =
   await import("../services/gameService.js");
 
-describe("immutabilitÃ© du service", () => {
-  it("associe la session Ã  une copie de l'Ã©vÃ©nement moteur", () => {
+describe("immutabilité du service", () => {
+  it("associe la session à une copie de l'événement moteur", () => {
     const event: GameEvent = Object.freeze({
       id: "event-1",
       sessionId: "",
@@ -23,7 +23,7 @@ describe("immutabilitÃ© du service", () => {
       actorId: "hamid",
       locationId: "forge_hamid",
       targetId: null,
-      description: "[BLOQUÃ‰] [ACTION_NOT_IMPLEMENTED]",
+      description: "[BLOQUÉ] [ACTION_NOT_IMPLEMENTED]",
       consequences: [],
       occurredAt: {
         year: 1,
@@ -39,18 +39,18 @@ describe("immutabilitÃ© du service", () => {
     expect(event.sessionId).toBe("");
   });
 
-  it("ajoute une narration sans modifier l'historique chargÃ©", () => {
+  it("ajoute une narration sans modifier l'historique chargé", () => {
     const previous: NarrativeEntry = {
       id: "entry-1",
       type: "system",
-      text: "DÃ©but",
+      text: "Début",
       timestamp: "2026-01-01T00:00:00.000Z",
     };
     const history = Object.freeze([previous]);
     const next: NarrativeEntry = {
       id: "entry-2",
       type: "narrator",
-      text: "Tentative refusÃ©e",
+      text: "Tentative refusée",
       timestamp: "2026-01-01T00:01:00.000Z",
     };
     const updated = appendNarrativeEntry(history, next);
