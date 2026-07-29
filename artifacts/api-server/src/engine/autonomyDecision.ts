@@ -1,5 +1,8 @@
 import type { StructuredAction } from "../domain/actions.js";
-import type { PersistentGoalKind } from "../domain/autonomy.js";
+import {
+  MAX_COMMITMENT_TURNS,
+  type PersistentGoalKind,
+} from "../domain/autonomy.js";
 import type {
   AutonomousDecisionInput,
   PreparedAutonomousCandidate,
@@ -20,6 +23,7 @@ export interface UtilityConsideration {
 export interface AutonomousCandidateTrace {
   candidateKey: string;
   action: StructuredAction;
+  targetId?: string;
   source: PreparedAutonomousCandidate["source"];
   eligible: boolean;
   exclusionReasons: string[];
@@ -27,6 +31,7 @@ export interface AutonomousCandidateTrace {
   considerations: UtilityConsideration[];
   baseScore: number | null;
   inertiaBonus: number;
+  reversalPenalty: number;
   seedNoise: number;
   finalScore: number | null;
 }
@@ -48,7 +53,7 @@ export type AutonomousDecisionResult =
     }
   | {
       success: false;
-      code: "NO_ELIGIBLE_ACTION";
+      code: "NO_ELIGIBLE_ACTION" | "DUPLICATE_CANDIDATE_KEY";
       trace: AutonomousDecisionTrace;
     };
 
@@ -117,9 +122,7 @@ function deterministicNoise(
 }
 
 function compareText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return Number(left > right) - Number(left < right);
 }
 
 function considerationsFor(
@@ -250,9 +253,10 @@ function priorityFor(
 function boundedConfiguration(
   value: number | undefined,
   fallback: number,
+  maximum = SCORE_MAX,
 ): number {
   if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || value < 0 || value > SCORE_MAX) {
+  if (!Number.isInteger(value) || value < 0 || value > maximum) {
     throw new RangeError("Autonomous decision configuration is out of bounds.");
   }
   return value;
@@ -274,15 +278,45 @@ export function decideAutonomousAction(
   const commitmentTurns = boundedConfiguration(
     config.commitmentTurns,
     DEFAULT_COMMITMENT_TURNS,
+    MAX_COMMITMENT_TURNS,
   );
 
-  const traces = [...input.candidates]
-    .sort((left, right) => compareText(left.candidateKey, right.candidateKey))
-    .map((candidate): AutonomousCandidateTrace => {
+  const orderedCandidates = [...input.candidates].sort((left, right) =>
+    compareText(left.candidateKey, right.candidateKey),
+  );
+  const duplicateKeys = orderedCandidates
+    .filter(
+      (candidate, index) =>
+        index > 0 &&
+        candidate.candidateKey === orderedCandidates[index - 1]?.candidateKey,
+    )
+    .map((candidate) => candidate.candidateKey);
+  if (duplicateKeys.length > 0) {
+    return {
+      success: false,
+      code: "DUPLICATE_CANDIDATE_KEY",
+      trace: {
+        actorId: input.actor.actorId,
+        seed,
+        candidates: [],
+        selectedCandidateKey: null,
+        tieBreak: "Duplicate candidate keys are rejected.",
+        reason: `Duplicate candidate keys: ${[...new Set(duplicateKeys)].join(
+          ", ",
+        )}.`,
+      },
+    };
+  }
+
+  const traces = orderedCandidates.map(
+    (candidate): AutonomousCandidateTrace => {
       if (!candidate.eligibility.eligible) {
         return {
           candidateKey: candidate.candidateKey,
           action: candidate.action,
+          ...(candidate.targetId === undefined
+            ? {}
+            : { targetId: candidate.targetId }),
           source: candidate.source,
           eligible: false,
           exclusionReasons: [
@@ -292,6 +326,7 @@ export function decideAutonomousAction(
           considerations: [],
           baseScore: null,
           inertiaBonus: 0,
+          reversalPenalty: 0,
           seedNoise: 0,
           finalScore: null,
         };
@@ -301,6 +336,9 @@ export function decideAutonomousAction(
         return {
           candidateKey: candidate.candidateKey,
           action: candidate.action,
+          ...(candidate.targetId === undefined
+            ? {}
+            : { targetId: candidate.targetId }),
           source: candidate.source,
           eligible: false,
           exclusionReasons: ["NO_SCORING_MODEL"],
@@ -308,6 +346,7 @@ export function decideAutonomousAction(
           considerations: [],
           baseScore: null,
           inertiaBonus: 0,
+          reversalPenalty: 0,
           seedNoise: 0,
           finalScore: null,
         };
@@ -320,6 +359,16 @@ export function decideAutonomousAction(
         input.actor.previousDecision.remainingCommitmentTurns > 0
           ? inertiaValue
           : 0;
+      const reversalPenalty =
+        priority === "NORMAL" &&
+        candidate.action.actionType === "move" &&
+        candidate.targetId !== undefined &&
+        input.actor.previousDecision?.intentKey.startsWith("move:") === true &&
+        input.actor.previousDecision.previousLocationId ===
+          candidate.targetId &&
+        input.actor.previousDecision.remainingCommitmentTurns > 0
+          ? inertiaValue
+          : 0;
       const seedNoise =
         priority === "NORMAL"
           ? deterministicNoise(seed, candidate.candidateKey, maxSeedNoise)
@@ -327,6 +376,9 @@ export function decideAutonomousAction(
       return {
         candidateKey: candidate.candidateKey,
         action: candidate.action,
+        ...(candidate.targetId === undefined
+          ? {}
+          : { targetId: candidate.targetId }),
         source: candidate.source,
         eligible: true,
         exclusionReasons: [],
@@ -334,10 +386,14 @@ export function decideAutonomousAction(
         considerations,
         baseScore,
         inertiaBonus,
+        reversalPenalty,
         seedNoise,
-        finalScore: clampScore(baseScore + inertiaBonus + seedNoise),
+        finalScore: clampScore(
+          baseScore + inertiaBonus + seedNoise - reversalPenalty,
+        ),
       };
-    });
+    },
+  );
 
   const eligible = traces.filter(
     (trace): trace is AutonomousCandidateTrace & { finalScore: number } =>
@@ -381,6 +437,12 @@ export function decideAutonomousAction(
       autonomy: {
         intentKey: selected.candidateKey,
         nextCommitmentTurns,
+        ...(selected.targetId === undefined
+          ? {}
+          : { targetId: selected.targetId }),
+        ...(selected.action.actionType === "move"
+          ? { previousLocationId: input.actor.locationId }
+          : {}),
       },
     },
     trace: {
