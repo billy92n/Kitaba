@@ -6,14 +6,16 @@
   "scripts": {
     "preinstall": "node ./scripts/enforce-pnpm.mjs",
     "build": "pnpm -r --if-present run build",
+    "benchmark:autonomy": "pnpm --filter @workspace/api-server run benchmark:autonomy",
+    "audit:autonomy-source": "node ./scripts/check-autonomy-source.mjs",
     "audit:engine-source": "node ./scripts/check-engine-source.mjs",
-    "lint": "eslint \"artifacts/api-server/src/{engine,services,tests}/**/*.ts\"",
-    "format:check": "prettier --check \"artifacts/api-server/src/{engine,tests,services}/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \".github/workflows/*.yml\"",
+    "lint": "eslint \"artifacts/api-server/src/{benchmarks,domain,engine,integration-tests,services,tests}/**/*.ts\"",
+    "format:check": "prettier --check \"artifacts/api-server/src/{benchmarks,domain,engine,integration-tests,services,tests}/**/*.ts\" \"artifacts/api-server/vitest*.ts\" \"scripts/**/*.mjs\" \"*.json\" \".github/workflows/*.yml\"",
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm --filter @workspace/api-server run test:coverage",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "check": "pnpm run audit:engine-source && pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build"
+    "check": "pnpm run audit:engine-source && pnpm run audit:autonomy-source && pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "private": true,
   "dependencies": {
