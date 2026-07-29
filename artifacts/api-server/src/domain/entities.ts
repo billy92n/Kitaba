@@ -3,6 +3,7 @@
 // WorldState.controlledEntityId.
 
 import type { WorldTime } from "./world.js";
+import type { AutonomyDecisionState, AutonomyProfile } from "./autonomy.js";
 
 export type EntityId = string;
 
@@ -24,6 +25,11 @@ export interface Entity {
   knowledge?: string[];
   memories?: string[];
   objectives?: string[];
+
+  /** Optional for compatibility with saves created before autonomous agents. */
+  autonomyProfile?: AutonomyProfile;
+  /** Updated only by the normal action resolver after a successful action. */
+  autonomyDecisionState?: AutonomyDecisionState;
 
   /**
    * Dernier instant mondial auquel les effets passifs de cette entité ont été
