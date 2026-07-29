@@ -1,4 +1,4 @@
-// Avance l'horloge mondiale en minutes entiÃ¨res et dÃ©cline uniquement l'acteur.
+// Avance l'horloge mondiale en minutes entières et décline uniquement l'acteur.
 
 import type { ActionType } from "../domain/actions.js";
 import type { Entity } from "../domain/entities.js";
@@ -26,7 +26,7 @@ const FATIGUE_DECAY_PER_HOUR = 1.5;
 const MINUTES_PER_HOUR = 60;
 const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 const DAYS_PER_SEASON = 30;
-const SEASONS: WorldTime["season"][] = ["printemps", "Ã©tÃ©", "automne", "hiver"];
+const SEASONS: WorldTime["season"][] = ["printemps", "été", "automne", "hiver"];
 
 export function advanceTime(
   time: WorldTime,
