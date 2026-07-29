@@ -19,7 +19,7 @@ export interface SessionRecord {
 export async function createSession(
   controlledEntityId: string,
   worldState: WorldState,
-  narrativeHistory: NarrativeEntry[]
+  narrativeHistory: NarrativeEntry[],
 ): Promise<string> {
   const id = randomUUID();
   await db.insert(kitabaSessionsTable).values({
@@ -32,7 +32,9 @@ export async function createSession(
   return id;
 }
 
-export async function loadSession(sessionId: string): Promise<SessionRecord | null> {
+export async function loadSession(
+  sessionId: string,
+): Promise<SessionRecord | null> {
   const rows = await db
     .select()
     .from(kitabaSessionsTable)
@@ -46,20 +48,4 @@ export async function loadSession(sessionId: string): Promise<SessionRecord | nu
     worldState: row.worldState as unknown as WorldState,
     narrativeHistory: row.narrativeHistory as unknown as NarrativeEntry[],
   };
-}
-
-export async function updateSession(
-  sessionId: string,
-  worldState: WorldState,
-  narrativeHistory: NarrativeEntry[]
-): Promise<void> {
-  await db
-    .update(kitabaSessionsTable)
-    .set({
-      worldVersion: worldState.worldVersion,
-      worldState: worldState as unknown as Record<string, unknown>,
-      narrativeHistory: narrativeHistory as unknown as Record<string, unknown>[],
-      updatedAt: new Date(),
-    })
-    .where(eq(kitabaSessionsTable.id, sessionId));
 }
