@@ -12,14 +12,14 @@ function action(
 }
 
 describe("moteur multi-acteur", () => {
-  it("prÃ©serve les actions du personnage contrÃ´lÃ©", () => {
+  it("préserve les actions du personnage contrôlé", () => {
     const state = createInitialWorldState("Yara");
     expect(
       resolveAction(state, "player", action("move", "taverne du loup")).success,
     ).toBe(true);
   });
 
-  it("permet Ã  un PNJ de se dÃ©placer", () => {
+  it("permet à un PNJ de se déplacer", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(
       state,
@@ -35,7 +35,7 @@ describe("moteur multi-acteur", () => {
     );
   });
 
-  it("permet Ã  un PNJ de prendre un objet", () => {
+  it("permet à un PNJ de prendre un objet", () => {
     const state = createInitialWorldState("Yara");
     const result = resolveAction(state, "hamid", action("take", "minerai"));
     expect(result.success).toBe(true);
@@ -47,7 +47,7 @@ describe("moteur multi-acteur", () => {
     );
   });
 
-  it("permet Ã  un PNJ de manger un objet de son inventaire", () => {
+  it("permet à un PNJ de manger un objet de son inventaire", () => {
     const state = createInitialWorldState("Yara");
     state.entities.tariq.hunger = 40;
     const result = resolveAction(state, "tariq", action("eat", "pain"));
@@ -64,7 +64,7 @@ describe("moteur multi-acteur", () => {
     [undefined, "OBJECT_NOT_EDIBLE"],
     [false, "OBJECT_NOT_EDIBLE"],
     ["oui", "OBJECT_NOT_EDIBLE"],
-  ])("refuse un objet possÃ©dÃ© dont edible vaut %j", (edible, failureCode) => {
+  ])("refuse un objet possédé dont edible vaut %j", (edible, failureCode) => {
     const state = createInitialWorldState("Yara");
     state.objects.pain_taverne = {
       ...state.objects.pain_taverne,
@@ -90,7 +90,7 @@ describe("moteur multi-acteur", () => {
     });
   });
 
-  it("applique le temps uniquement Ã  l'acteur transmis", () => {
+  it("applique le temps uniquement à l'acteur transmis", () => {
     const state = createInitialWorldState("Yara");
     state.entities.hamid.hunger = 50;
     state.entities.hamid.fatigue = 50;
@@ -151,7 +151,7 @@ describe("moteur multi-acteur", () => {
     expect(result.event.description).toContain("lieu valide");
   });
 
-  it("est indÃ©pendant de controlledEntityId pour un actorId explicite", () => {
+  it("est indépendant de controlledEntityId pour un actorId explicite", () => {
     const first = createInitialWorldState("Yara");
     const second = structuredClone(first);
     second.controlledEntityId = "oumou";
