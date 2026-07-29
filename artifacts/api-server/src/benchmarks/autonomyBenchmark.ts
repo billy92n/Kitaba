@@ -9,6 +9,7 @@ function input(candidateCount: number): AutonomousDecisionInput {
     actor: {
       actorId: "benchmark-actor",
       actorName: "Benchmark",
+      locationId: "benchmark-location",
       hunger: 100,
       fatigue: 100,
       health: 100,
