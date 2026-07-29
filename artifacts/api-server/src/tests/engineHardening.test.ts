@@ -190,6 +190,9 @@ describe("contrats du moteur", () => {
     expect(
       advanceTime({ year: 2, season: "été", day: 30, hour: 23 }, 120),
     ).toEqual({ year: 2, season: "automne", day: 1, hour: 1, minute: 0 });
+    expect(
+      advanceTime({ year: 2, season: "été", day: 4, hour: 23 }, 120),
+    ).toEqual({ year: 2, season: "été", day: 5, hour: 1, minute: 0 });
     const actorWithoutStats = createInitialWorldState("Yara").entities.hamid;
     expect(applyPassiveDecay(actorWithoutStats, 120)).toBe(actorWithoutStats);
     expect(
@@ -380,6 +383,22 @@ describe("contrats du moteur", () => {
       advanceTime({ year: 1, season: "printemps", day: 1, hour: 8.25 }, 15),
     ).toMatchObject({ hour: 8, minute: 30 });
   });
+
+  it.each(["move", "take", "eat"] as const)(
+    "refuse %s sans cible avec un échec typé",
+    (actionType) => {
+      const result = resolveAction(
+        createInitialWorldState("Yara"),
+        "hamid",
+        action(actionType, null),
+        deterministic,
+      );
+      expect(result).toMatchObject({
+        success: false,
+        error: { code: "TARGET_NOT_FOUND" },
+      });
+    },
+  );
 
   it.each(["give", "use"] as const)(
     "refuse %s sans version, temps ni état fictifs",
