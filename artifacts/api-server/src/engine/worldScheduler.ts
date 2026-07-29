@@ -106,12 +106,55 @@ function singletonHeap(entry: ScheduledActor): ScheduledActorHeapNode {
   return { entry: { ...entry }, rank: 1, left: null, right: null };
 }
 
+function validateSchedulerEntry(entry: ScheduledActor): void {
+  if (
+    !isCanonicalAutonomyIdentity(entry.actorId) ||
+    !isSimulationLod(entry.lod) ||
+    (entry.lod === "LOD3" && entry.dueMinute !== null) ||
+    (entry.lod !== "LOD3" &&
+      (entry.dueMinute === null ||
+        !Number.isSafeInteger(entry.dueMinute) ||
+        entry.dueMinute < 0))
+  ) {
+    throw new SchedulerInvariantError(
+      "INVALID_SCHEDULER_STATE",
+      `Invalid scheduler entry for ${entry.actorId}.`,
+    );
+  }
+}
+
+function validateSchedulerNode(node: ScheduledActorHeapNode): void {
+  validateSchedulerEntry(node.entry);
+  if (
+    !Number.isSafeInteger(node.rank) ||
+    node.rank !== heapRank(node.right) + 1 ||
+    heapRank(node.left) < heapRank(node.right) ||
+    (node.left !== null &&
+      compareScheduledActors(node.entry, node.left.entry) > 0) ||
+    (node.right !== null &&
+      compareScheduledActors(node.entry, node.right.entry) > 0)
+  ) {
+    throw new SchedulerInvariantError(
+      "INVALID_SCHEDULER_STATE",
+      "The scheduler queue is not a valid leftist heap.",
+    );
+  }
+}
+
 function mergeHeaps(
   first: ScheduledActorHeapNode | null,
   second: ScheduledActorHeapNode | null,
 ): ScheduledActorHeapNode | null {
-  if (!first) return second;
-  if (!second) return first;
+  if (!first) {
+    if (second) validateSchedulerNode(second);
+    return second;
+  }
+  if (!second) {
+    validateSchedulerNode(first);
+    return first;
+  }
+  validateSchedulerNode(first);
+  validateSchedulerNode(second);
   const [root, other] =
     compareScheduledActors(first.entry, second.entry) <= 0
       ? [first, second]
@@ -150,8 +193,15 @@ function heapFromEntries(
 }
 
 function heapEntries(queue: ScheduledActorHeapNode | null): ScheduledActor[] {
-  if (!queue) return [];
-  return [queue.entry, ...heapEntries(queue.left), ...heapEntries(queue.right)];
+  const entries: ScheduledActor[] = [];
+  const stack = queue ? [queue] : [];
+  while (stack.length > 0) {
+    const node = stack.pop() as ScheduledActorHeapNode;
+    entries.push(node.entry);
+    if (node.left) stack.push(node.left);
+    if (node.right) stack.push(node.right);
+  }
+  return entries;
 }
 
 function isSimulationLod(value: unknown): value is SimulationLod {
@@ -191,61 +241,24 @@ export function validateWorldSchedulerState(
   scheduler: WorldSchedulerState,
   entityIds: readonly EntityId[],
 ): void {
-  if (
-    scheduler.schemaVersion !== 1 ||
-    !isCanonicalAutonomyIdentity(scheduler.seed) ||
-    !Number.isSafeInteger(scheduler.revision) ||
-    scheduler.revision < 0 ||
-    !Number.isSafeInteger(scheduler.actorCount) ||
-    scheduler.actorCount < 0
-  ) {
-    throw new SchedulerInvariantError(
-      "INVALID_SCHEDULER_STATE",
-      "The scheduler envelope is invalid.",
-    );
-  }
+  validateWorldSchedulerHead(scheduler);
   const expected = [...entityIds].sort(compareText);
   const seen = new Set<string>();
-  const stack: Array<{
-    node: ScheduledActorHeapNode;
-    parent: ScheduledActorHeapNode | null;
-  }> = scheduler.queue ? [{ node: scheduler.queue, parent: null }] : [];
+  const stack: ScheduledActorHeapNode[] = scheduler.queue
+    ? [scheduler.queue]
+    : [];
   while (stack.length > 0) {
-    const current = stack.pop() as {
-      node: ScheduledActorHeapNode;
-      parent: ScheduledActorHeapNode | null;
-    };
-    const { node, parent } = current;
-    const entry = node.entry;
-    if (
-      !isCanonicalAutonomyIdentity(entry.actorId) ||
-      !isSimulationLod(entry.lod) ||
-      (entry.lod === "LOD3" && entry.dueMinute !== null) ||
-      (entry.lod !== "LOD3" &&
-        (entry.dueMinute === null ||
-          !Number.isSafeInteger(entry.dueMinute) ||
-          entry.dueMinute < 0)) ||
-      seen.has(entry.actorId)
-    ) {
+    const node = stack.pop() as ScheduledActorHeapNode;
+    validateSchedulerNode(node);
+    if (seen.has(node.entry.actorId)) {
       throw new SchedulerInvariantError(
         "INVALID_SCHEDULER_STATE",
-        `Invalid scheduler entry for ${entry.actorId}.`,
+        `Invalid scheduler entry for ${node.entry.actorId}.`,
       );
     }
-    seen.add(entry.actorId);
-    if (
-      !Number.isSafeInteger(node.rank) ||
-      node.rank !== heapRank(node.right) + 1 ||
-      heapRank(node.left) < heapRank(node.right) ||
-      (parent !== null && compareScheduledActors(parent.entry, entry) > 0)
-    ) {
-      throw new SchedulerInvariantError(
-        "INVALID_SCHEDULER_STATE",
-        "The scheduler queue is not a valid leftist heap.",
-      );
-    }
-    if (node.left) stack.push({ node: node.left, parent: node });
-    if (node.right) stack.push({ node: node.right, parent: node });
+    seen.add(node.entry.actorId);
+    if (node.left) stack.push(node.left);
+    if (node.right) stack.push(node.right);
   }
   const actual = [...seen].sort(compareText);
   if (
@@ -260,6 +273,41 @@ export function validateWorldSchedulerState(
   }
 }
 
+/**
+ * Constant-time guard used on the scheduling hot path. It validates the
+ * persisted envelope and heap root; mergeHeaps validates every node touched
+ * by the subsequent O(log n) transition. The exhaustive validator above is
+ * reserved for import/migration diagnostics because it necessarily scans all
+ * actors.
+ */
+export function validateWorldSchedulerHead(
+  scheduler: WorldSchedulerState,
+): void {
+  if (
+    scheduler.schemaVersion !== 1 ||
+    !isCanonicalAutonomyIdentity(scheduler.seed) ||
+    !Number.isSafeInteger(scheduler.revision) ||
+    scheduler.revision < 0 ||
+    !Number.isSafeInteger(scheduler.actorCount) ||
+    scheduler.actorCount < 0
+  ) {
+    throw new SchedulerInvariantError(
+      "INVALID_SCHEDULER_STATE",
+      "The scheduler envelope is invalid.",
+    );
+  }
+  if (
+    (scheduler.actorCount === 0 && scheduler.queue !== null) ||
+    (scheduler.actorCount > 0 && scheduler.queue === null)
+  ) {
+    throw new SchedulerInvariantError(
+      "INVALID_SCHEDULER_STATE",
+      "The scheduler actor count and queue disagree.",
+    );
+  }
+  if (scheduler.queue) validateSchedulerNode(scheduler.queue);
+}
+
 export function ensureWorldScheduler(
   state: WorldState,
   seed: string,
@@ -271,7 +319,7 @@ export function ensureWorldScheduler(
       "The requested seed differs from the persisted scheduler seed.",
     );
   }
-  validateWorldSchedulerState(scheduler, Object.keys(state.entities));
+  validateWorldSchedulerHead(scheduler);
   return state.scheduler
     ? (state as WorldState & { scheduler: WorldSchedulerState })
     : { ...state, scheduler };
@@ -380,7 +428,11 @@ export function setScheduledActorLod(
         }
       : { ...entry },
   );
-  return { ...scheduler, queue: heapFromEntries(queue) };
+  return {
+    ...scheduler,
+    revision: scheduler.revision + 1,
+    queue: heapFromEntries(queue),
+  };
 }
 
 export function sleepScheduledActor(

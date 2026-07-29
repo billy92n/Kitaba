@@ -77,7 +77,7 @@ Les échéances sont des minutes mondiales entières, jamais des flottants.
 L’ordre total est :
 
 1. `dueMinute` croissante ;
-2. `actorId` comparé par ordre de points de code Unicode.
+2. `actorId` comparé par ordre ordinal des unités de code UTF-16 ECMAScript.
 
 Contrairement à un tas implicitement stable, cet ordre ne dépend ni de l’ordre
 des propriétés JavaScript, ni de la plateforme. Une graine canonique est
@@ -92,9 +92,13 @@ SQL n’est requise car `WorldState` est déjà stocké en JSONB. Après amorça
 scheduler ne parcourt plus toutes les entités.
 
 La file contient exactement une entrée par acteur connu. L’arbre persiste la
-forme du tas gauchiste et ses rangs sont validés au chargement. Un acteur
-dormant (`LOD3`) possède `dueMinute: null` et reste après toutes les entrées
-actives jusqu’à un réveil explicite.
+forme du tas gauchiste. Le validateur exhaustif destiné aux imports et aux
+diagnostics vérifie tous les identifiants, doublons, rangs et relations de tas.
+Le chemin chaud vérifie en temps constant l’enveloppe et la racine, puis chaque
+nœud touché par la transition en `O(log n)`. Il ne reparcourt donc jamais le
+monde entier à chaque batch. Un acteur dormant (`LOD3`) possède
+`dueMinute: null` et reste après toutes les entrées actives jusqu’à un réveil
+explicite.
 
 ### Niveaux de détail
 
@@ -141,18 +145,52 @@ consomme ni échéance, ni budget persistant.
 ### Déterminisme des effets périphériques
 
 Le scheduler dérive aussi les identifiants d’événement, narration et autosave,
-le timestamp de narration et le choix de variante narrative. Les mêmes entrée,
-graine et historique produisent donc la même chronologie observable. Le chemin
-interactif existant conserve ses générateurs par défaut.
+le timestamp de narration et le choix de variante narrative. La graine de
+décision ne dépend pas de la session, afin que deux mondes identiques prennent
+la même décision. Les identifiants persistés incluent en revanche le
+`sessionId`, car les clés primaires PostgreSQL sont globales. Les mêmes entrée,
+graine, session et historique produisent donc la même chronologie observable
+sans collision entre deux sessions. Le chemin interactif existant conserve ses
+générateurs par défaut.
+
+### Déclenchement opérationnel
+
+Le bundle serveur contient un worker borné
+`dist/worldSchedulerWorker.mjs`, lancé par `pnpm run scheduler:run`. Il reçoit
+un monde explicite et les paramètres suivants :
+
+- `KITABA_SCHEDULER_SESSION_ID` ;
+- `KITABA_SCHEDULER_SEED` ;
+- `KITABA_SCHEDULER_BUDGET_UNITS` (64 par défaut) ;
+- `KITABA_SCHEDULER_MAX_BATCHES` (100 par défaut).
+
+Le worker n’utilise jamais l’heure murale pour ordonner les acteurs. Un
+superviseur externe peut invoquer ce programme ponctuellement ou
+périodiquement ; l’invocation elle-même reste bornée et rejouable. Chaque batch
+charge l’instantané persistant et toutes les écritures passent par
+`ActionCommitPort`. Un conflit OCC interrompt le worker sans retry implicite :
+un nouvel appel repart du dernier état validé.
+
+Ce choix sépare l’ordonnancement déterministe interne du mécanisme de réveil du
+processus, qui dépend nécessairement du déploiement. Il évite de cacher un
+timer non déterministe dans l’API et permet à un orchestrateur de répartir les
+mondes sans parcourir tous leurs acteurs.
 
 ## Conséquences
 
-- amorçage : `O(n log n)` une seule fois ;
+- amorçage et validation exhaustive explicite : `O(n log n)` ;
 - activation : `O(log n)` en temps et en nouveaux nœuds immuables ;
 - mémoire : `O(n)` ;
 - aucune dépendance à `controlledEntityId` pour sélectionner ou décider ;
 - les commandes pures de veille, réveil et changement de LOD sont disponibles ;
   leur persistance doit être incluse dans un futur commit d’action autoritaire,
   jamais écrite directement ;
-- la parallélisation distribuée et les conséquences agrégées restent hors
+- le benchmark de cœur couvre 10 000 acteurs ; un second protocole couvre
+  1 000 activations réelles et séparées du service, incluant décision, moteur,
+  perception, narration et OCC en mémoire ;
+- PostgreSQL réécrit encore l’instantané JSONB et crée un autosave par action.
+  La CI certifie son atomicité et ses conflits, mais sa latence dépend du
+  déploiement et le benchmark de service ne la présente pas comme mesurée ;
+- la persistance autonome d’une commande administrative de LOD, la
+  parallélisation distribuée et les conséquences agrégées restent hors
   périmètre jusqu’à l’existence de primitives moteur correspondantes.

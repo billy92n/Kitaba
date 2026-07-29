@@ -3,6 +3,7 @@
 import type { GameEvent } from "../domain/events.js";
 import type { ActionOutcome, PerceptibleFacts } from "../domain/knowledge.js";
 import type { EntityId, WorldState } from "../domain/world.js";
+import { catchUpEntity } from "./timeEngine.js";
 
 export type PerceptionFailureCode =
   "OBSERVER_NOT_FOUND" | "OBSERVER_LOCATION_NOT_FOUND";
@@ -48,14 +49,15 @@ export function buildPerceptibleFacts(
   observerId: EntityId,
   event: GameEvent,
 ): PerceptionResult {
-  const observer = state.entities[observerId];
-  if (!observer) {
+  const persistedObserver = state.entities[observerId];
+  if (!persistedObserver) {
     return {
       success: false,
       code: "OBSERVER_NOT_FOUND",
       reason: `Observateur introuvable : ${observerId}.`,
     };
   }
+  const observer = catchUpEntity(persistedObserver, state.time);
   const location = state.locations[observer.locationId];
   if (!location) {
     return {

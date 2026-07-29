@@ -100,6 +100,43 @@ describe("world scheduler service", () => {
     expect(second).toEqual(first);
   });
 
+  it("names persisted artifacts deterministically without cross-session collisions", async () => {
+    const firstSession = snapshot("amir");
+    const secondSession = snapshot("amir");
+    secondSession.id = "another-session";
+    const firstPort = new StatefulCommitPort(0, []);
+    const secondPort = new StatefulCommitPort(0, []);
+    const first = await runWorldSchedulerBatch(
+      firstSession.id,
+      { seed: "shared-seed", budgetUnits: 8 },
+      dependencies(firstSession, firstPort),
+    );
+    const second = await runWorldSchedulerBatch(
+      secondSession.id,
+      { seed: "shared-seed", budgetUnits: 8 },
+      dependencies(secondSession, secondPort),
+    );
+
+    expect(first.status).toBe("COMPLETED");
+    expect(second.status).toBe("COMPLETED");
+    if (first.status !== "COMPLETED" || second.status !== "COMPLETED") return;
+    expect(second.activations[0]?.selectedCandidateKey).toBe(
+      first.activations[0]?.selectedCandidateKey,
+    );
+    expect(second.activations[0]?.eventId).not.toBe(
+      first.activations[0]?.eventId,
+    );
+    expect(secondPort.commits[0]?.autoSaveId).not.toBe(
+      firstPort.commits[0]?.autoSaveId,
+    );
+    expect(secondPort.commits[0]?.narrativeHistory[0]?.text).toBe(
+      firstPort.commits[0]?.narrativeHistory[0]?.text,
+    );
+    expect(secondPort.commits[0]?.narrativeHistory[0]?.id).not.toBe(
+      firstPort.commits[0]?.narrativeHistory[0]?.id,
+    );
+  });
+
   it("does not use controlledEntityId to select or decide another actor", async () => {
     const firstSession = snapshot("player");
     const secondSession = snapshot("hamid");
@@ -153,6 +190,35 @@ describe("world scheduler service", () => {
     });
     expect(port.commits).toHaveLength(0);
     expect(session).toEqual(before);
+  });
+
+  it("resumes the same pending actor after an interrupted batch", async () => {
+    const session = snapshot();
+    const config = {
+      seed: "resume-after-conflict",
+      budgetUnits: 8,
+      lodProfiles: { LOD1: { cadenceMinutes: 60, budgetCost: 8 } },
+    } as const;
+    const interrupted = await runWorldSchedulerBatch(
+      session.id,
+      config,
+      dependencies(session, new StatefulCommitPort(0, [], true)),
+    );
+    const resumed = await runWorldSchedulerBatch(
+      session.id,
+      config,
+      dependencies(session, new StatefulCommitPort(0, [])),
+    );
+
+    expect(interrupted).toMatchObject({
+      status: "CONFLICT",
+      attemptedActorId: "amir",
+      activations: [],
+    });
+    expect(resumed).toMatchObject({
+      status: "COMPLETED",
+      activations: [{ actorId: "amir", schedulerRevision: 0 }],
+    });
   });
 
   it("reports missing sessions and invalid persisted scheduler state", async () => {

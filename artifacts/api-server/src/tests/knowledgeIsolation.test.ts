@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
 import { resolveAction } from "../engine/actionResolver.js";
+import { advanceTime } from "../engine/timeEngine.js";
 import { createInitialWorldState } from "../worldSeed.js";
 import type { GameEvent } from "../domain/events.js";
 import type { StructuredAction } from "../domain/actions.js";
@@ -146,6 +147,24 @@ describe("knowledgeIsolation", () => {
     expect(facts.inventoryObjects.map((object) => object.name)).not.toContain(
       state.objects.panier_legumes.name,
     );
+  });
+
+  it("matérialise les besoins paresseux de l'observateur sans muter le monde", () => {
+    const state = createInitialWorldState("Yara");
+    const observer = state.entities[state.controlledEntityId];
+    observer.lastSimulationTime = { ...state.time };
+    state.time = advanceTime(state.time, 120);
+    const before = structuredClone(state);
+
+    const facts = factsFrom(
+      buildPerceptibleFacts(state, state.controlledEntityId, dummyEvent),
+    );
+
+    expect(facts.entityStats).toMatchObject({
+      hunger: Math.round((observer.hunger ?? 0) - 5),
+      fatigue: Math.round((observer.fatigue ?? 0) - 3),
+    });
+    expect(state).toEqual(before);
   });
 
   it("ne transmet pas les conséquences privées de Hamid à Tariq dans un autre lieu", () => {

@@ -108,17 +108,18 @@ function turnDependencies(
   schedulerSeed: string,
   dependencies: WorldSchedulerBatchDependencies,
 ): AutonomousTurnDependencies {
-  const key = activationKey(schedulerSeed, activation);
+  const replayKey = activationKey(schedulerSeed, activation);
+  const persistenceKey = `${sessionId}\u0000${replayKey}`;
   return {
     loadSession: dependencies.loadSession,
     commitPort: dependencies.commitPort,
-    createEventId: () => deterministicId(key, "event"),
-    createNarrativeEntryId: () => deterministicId(key, "narrative"),
-    createAutoSaveId: () => deterministicId(key, "autosave"),
+    createEventId: () => deterministicId(persistenceKey, "event"),
+    createNarrativeEntryId: () => deterministicId(persistenceKey, "narrative"),
+    createAutoSaveId: () => deterministicId(persistenceKey, "autosave"),
     nowIso: () => deterministicTimestamp(activation.dueMinute),
     narrate: (facts) =>
       narrateFromPerception(facts, () =>
-        deterministicUnit(`${key}\u0000narration`),
+        deterministicUnit(`${replayKey}\u0000narration`),
       ),
   };
 }

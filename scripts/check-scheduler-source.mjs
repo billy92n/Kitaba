@@ -36,6 +36,24 @@ const files = [
       /\.tryCommit\s*\(/,
     ],
   },
+  {
+    path: fileURLToPath(
+      new URL(
+        "../artifacts/api-server/src/services/worldSchedulerWorker.ts",
+        import.meta.url,
+      ),
+    ),
+    forbidden: [
+      /\bcontrolledEntityId\b/,
+      /\bplayer\b/i,
+      /\bMath\.random\b/,
+      /\bDate\.now\b/,
+      /\brandomUUID\b/,
+      /\.tryCommit\s*\(/,
+      /postgres/i,
+      /worldRepository/i,
+    ],
+  },
 ];
 
 const failures = [];

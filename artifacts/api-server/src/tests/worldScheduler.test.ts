@@ -51,12 +51,14 @@ function findScheduledActor(
   node: ScheduledActorHeapNode | null,
   actorId: string,
 ): ScheduledActor | undefined {
-  if (!node) return undefined;
-  if (node.entry.actorId === actorId) return node.entry;
-  return (
-    findScheduledActor(node.left, actorId) ??
-    findScheduledActor(node.right, actorId)
-  );
+  const stack = node ? [node] : [];
+  while (stack.length > 0) {
+    const current = stack.pop() as ScheduledActorHeapNode;
+    if (current.entry.actorId === actorId) return current.entry;
+    if (current.left) stack.push(current.left);
+    if (current.right) stack.push(current.right);
+  }
+  return undefined;
 }
 
 describe("deterministic world scheduler", () => {
@@ -110,6 +112,11 @@ describe("deterministic world scheduler", () => {
     expect(selectScheduledActivation(state.scheduler, config)?.actorId).toBe(
       "actor-00000",
     );
+    const sleeping = sleepScheduledActor(state.scheduler, "actor-02999", 1);
+    expect(findScheduledActor(sleeping.queue, "actor-02999")).toMatchObject({
+      lod: "LOD3",
+      dueMinute: null,
+    });
   });
 
   it("materializes integer world time and completes the queue immutably", () => {
@@ -152,6 +159,7 @@ describe("deterministic world scheduler", () => {
   it("supports deterministic sleep, wake and LOD changes", () => {
     const scheduler = bootstrapWorldScheduler(worldWithActors(2), "lod");
     const sleeping = sleepScheduledActor(scheduler, "actor-00000", 10);
+    expect(sleeping.revision).toBe(1);
     expect(findScheduledActor(sleeping.queue, "actor-00000")).toEqual({
       actorId: "actor-00000",
       lod: "LOD3",
@@ -162,18 +170,19 @@ describe("deterministic world scheduler", () => {
     );
 
     const awake = wakeScheduledActor(sleeping, "actor-00000", "LOD0", 5);
+    expect(awake.revision).toBe(2);
     expect(selectScheduledActivation(awake, config)).toMatchObject({
       actorId: "actor-00000",
       lod: "LOD0",
       dueMinute: 5,
       budgetCost: 8,
     });
-    expect(
-      findScheduledActor(
-        setScheduledActorLod(awake, "actor-00000", "LOD2", 50).queue,
-        "actor-00000",
-      ),
-    ).toMatchObject({ lod: "LOD2", dueMinute: 50 });
+    const changed = setScheduledActorLod(awake, "actor-00000", "LOD2", 50);
+    expect(changed.revision).toBe(3);
+    expect(findScheduledActor(changed.queue, "actor-00000")).toMatchObject({
+      lod: "LOD2",
+      dueMinute: 50,
+    });
     expect(scheduler.queue).not.toEqual(sleeping.queue);
   });
 
@@ -189,9 +198,23 @@ describe("deterministic world scheduler", () => {
     const scheduler = bootstrapWorldScheduler(empty, "empty");
     expect(scheduler).toMatchObject({ actorCount: 0, queue: null });
     expect(() => validateWorldSchedulerState(scheduler, [])).not.toThrow();
+    expect(() => setScheduledActorLod(scheduler, "missing", "LOD1", 0)).toThrow(
+      "not scheduled",
+    );
 
     const persisted = ensureWorldScheduler(worldWithActors(2), "persisted");
     expect(ensureWorldScheduler(persisted, "persisted")).toBe(persisted);
+    const guardedEntities = new Proxy(persisted.entities, {
+      ownKeys() {
+        throw new Error("hot path enumerated every actor");
+      },
+    });
+    expect(
+      ensureWorldScheduler(
+        { ...persisted, entities: guardedEntities },
+        "persisted",
+      ).scheduler,
+    ).toBe(persisted.scheduler);
     const activation = selectScheduledActivation(persisted.scheduler, config);
     expect(activation).not.toBeNull();
     if (!activation) return;
@@ -223,6 +246,14 @@ describe("deterministic world scheduler", () => {
   });
 
   it("rejects corrupt, incomplete, duplicate and non-heap persisted states", () => {
+    const threeActorWorld = worldWithActors(3);
+    expect(() =>
+      validateWorldSchedulerState(
+        bootstrapWorldScheduler(threeActorWorld, "three-actor-validation"),
+        Object.keys(threeActorWorld.entities),
+      ),
+    ).not.toThrow();
+
     const world = worldWithActors(2);
     const valid = bootstrapWorldScheduler(world, "validation");
     const root = valid.queue;
@@ -281,6 +312,17 @@ describe("deterministic world scheduler", () => {
           right: null,
         },
       },
+      {
+        ...valid,
+        queue: {
+          ...root,
+          rank: 1,
+          left: { ...child, entry: { ...child.entry, actorId: "other" } },
+          right: null,
+        },
+      },
+      { ...valid, actorCount: 0 },
+      { ...valid, queue: null },
       { ...valid, actorCount: 1 },
     ];
     for (const variant of variants) {

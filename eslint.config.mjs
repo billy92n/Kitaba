@@ -12,6 +12,7 @@ export default tseslint.config(
   {
     files: [
       "artifacts/api-server/src/{benchmarks,domain,engine,integration-tests,services,tests}/**/*.ts",
+      "artifacts/api-server/src/worldSchedulerWorker.ts",
     ],
     languageOptions: {
       parser: tseslint.parser,

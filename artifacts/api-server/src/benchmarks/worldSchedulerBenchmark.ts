@@ -2,7 +2,7 @@ import { cpus, platform, release } from "node:os";
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import type { Entity } from "../domain/entities.js";
-import type { WorldState } from "../domain/world.js";
+import type { WorldLocation, WorldState } from "../domain/world.js";
 import {
   completeScheduledActivation,
   ensureWorldScheduler,
@@ -10,6 +10,12 @@ import {
   selectScheduledActivation,
 } from "../engine/worldScheduler.js";
 import { createInitialWorldState } from "../worldSeed.js";
+import type {
+  ActionCommit,
+  ActionCommitPort,
+} from "../services/actionCommit.js";
+import type { AutonomousSessionSnapshot } from "../services/autonomousTurn.js";
+import { runWorldSchedulerBatch } from "../services/worldScheduler.js";
 
 function largeWorld(actorCount: number): WorldState {
   const base = createInitialWorldState("Benchmark");
@@ -24,6 +30,29 @@ function largeWorld(actorCount: number): WorldState {
     controlledEntityId: "actor-000000",
     entities,
   };
+}
+
+function isolatedWorld(actorCount: number): WorldState {
+  const world = largeWorld(actorCount);
+  const locations: Record<string, WorldLocation> = {};
+  const entities: Record<string, Entity> = {};
+  for (const actorId of Object.keys(world.entities)) {
+    const locationId = `location-${actorId}`;
+    locations[locationId] = {
+      id: locationId,
+      name: locationId,
+      description: "Isolated benchmark location",
+      connectedLocations: [],
+      presentEntities: [actorId],
+      presentObjects: [],
+    };
+    entities[actorId] = {
+      ...world.entities[actorId],
+      locationId,
+      inventory: [],
+    };
+  }
+  return { ...world, entities, locations, objects: {}, relations: [] };
 }
 
 describe("world scheduler performance", () => {
@@ -65,5 +94,74 @@ describe("world scheduler performance", () => {
     expect(report.finalRevision).toBe(actorCount);
     expect(report.bootstrapMs).toBeGreaterThanOrEqual(0);
     expect(report.fairCycleMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("measures one thousand full service activations with one-actor budgets", async () => {
+    const actorCount = 1_000;
+    const worldState = ensureWorldScheduler(
+      isolatedWorld(actorCount),
+      "service-benchmark-seed",
+    );
+    let session: AutonomousSessionSnapshot = {
+      id: "service-benchmark-session",
+      controlledEntityId: worldState.controlledEntityId,
+      worldVersion: worldState.worldVersion,
+      worldState,
+      narrativeHistory: [],
+    };
+    const commitPort: ActionCommitPort = {
+      async tryCommit(commit: ActionCommit) {
+        if (commit.expectedWorldVersion !== session.worldVersion) {
+          return "CONFLICT";
+        }
+        session = {
+          ...session,
+          worldVersion: commit.newWorldState.worldVersion,
+          worldState: commit.newWorldState,
+          narrativeHistory: commit.narrativeHistory,
+        };
+        return "COMMITTED";
+      },
+    };
+    const startedAt = performance.now();
+    let activationCount = 0;
+    for (let index = 0; index < actorCount; index += 1) {
+      const result = await runWorldSchedulerBatch(
+        session.id,
+        {
+          seed: "service-benchmark-seed",
+          budgetUnits: 8,
+          lodProfiles: { LOD1: { cadenceMinutes: 60, budgetCost: 8 } },
+        },
+        { loadSession: async () => session, commitPort },
+      );
+      if (result.status !== "COMPLETED") {
+        throw new Error(`Service benchmark stopped with ${result.status}.`);
+      }
+      activationCount += result.activations.length;
+    }
+    const elapsedMs = performance.now() - startedAt;
+    const report = {
+      protocol: {
+        actors: actorCount,
+        operation:
+          "one thousand separate service batches including decision, engine, perception, narration and in-memory ActionCommitPort",
+        persistence:
+          "in-memory OCC adapter; PostgreSQL latency and JSONB writes excluded",
+        budget: "one LOD1 activation per batch",
+      },
+      environment: {
+        node: process.version,
+        platform: `${platform()} ${release()}`,
+        cpu: cpus()[0]?.model ?? "unknown",
+      },
+      elapsedMs: Number(elapsedMs.toFixed(3)),
+      meanActivationMs: Number((elapsedMs / actorCount).toFixed(3)),
+      activations: activationCount,
+      finalWorldVersion: session.worldVersion,
+    };
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    expect(report.activations).toBe(actorCount);
+    expect(report.finalWorldVersion).toBe(actorCount);
   });
 });
