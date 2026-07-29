@@ -1,6 +1,6 @@
 // tests/knowledgeIsolation.test.ts
-// Prouve que : le narrateur ne connaît jamais les informations secrètes du monde
-//              le personnage contrôlé utilise exactement le même modèle qu'un PNJ
+// Prouve que : le narrateur ne connaÃ®t jamais les informations secrÃ¨tes du monde
+//              le personnage contrÃ´lÃ© utilise exactement le mÃªme modÃ¨le qu'un PNJ
 
 import { describe, it, expect } from "vitest";
 import { buildPerceptibleFacts } from "../engine/perceptionEngine.js";
@@ -22,16 +22,16 @@ function factsFrom(result: PerceptionResult) {
 }
 
 describe("knowledgeIsolation", () => {
-  it("les PerceptibleFacts ne contiennent pas les notes secrètes des relations", () => {
+  it("les PerceptibleFacts ne contiennent pas les notes secrÃ¨tes des relations", () => {
     const state = createInitialWorldState("Yara");
     const facts = factsFrom(
       buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
     );
 
-    // Les notes de relations sont secrètes — elles ne doivent pas apparaître dans les faits
+    // Les notes de relations sont secrÃ¨tes â€” elles ne doivent pas apparaÃ®tre dans les faits
     const factsJson = JSON.stringify(facts);
-    expect(factsJson).not.toContain("fournit des légumes");
-    expect(factsJson).not.toContain("loge à la taverne");
+    expect(factsJson).not.toContain("fournit des lÃ©gumes");
+    expect(factsJson).not.toContain("loge Ã  la taverne");
     expect(factsJson).not.toContain("notes");
   });
 
@@ -41,9 +41,10 @@ describe("knowledgeIsolation", () => {
       buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
     );
 
-    // L'inventaire de Tariq (pain_taverne) est privé et ne doit pas fuiter
+    // L'inventaire de Tariq (pain_taverne) est privÃ© et ne doit pas fuiter
     const factsJson = JSON.stringify(facts);
-    // Les entités présentes n'exposent que name, occupation, mood — pas l'inventaire
+    expect(factsJson).not.toContain("pain_taverne");
+    // Les entitÃ©s prÃ©sentes n'exposent que name, occupation, mood â€” pas l'inventaire
     for (const e of facts.presentEntities) {
       expect(Object.keys(e)).not.toContain("inventory");
     }
@@ -55,20 +56,20 @@ describe("knowledgeIsolation", () => {
       buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
     );
 
-    // Le joueur est place_centrale — la forge et la ferme ne doivent pas être visibles
+    // Le joueur est place_centrale â€” la forge et la ferme ne doivent pas Ãªtre visibles
     const factsJson = JSON.stringify(facts);
     expect(factsJson).not.toContain("forge_hamid");
     expect(factsJson).not.toContain("ferme_oumou");
-    // Mais le lieu courant doit être présent
+    // Mais le lieu courant doit Ãªtre prÃ©sent
     expect(facts.locationName).toContain("Salma");
   });
 
-  it("le personnage contrôlé utilise exactement le même type Entity qu'un PNJ", () => {
+  it("le personnage contrÃ´lÃ© utilise exactement le mÃªme type Entity qu'un PNJ", () => {
     const state = createInitialWorldState("Yara");
     const controlled = state.entities[state.controlledEntityId];
     const npc = state.entities["hamid"];
 
-    // Les deux doivent partager les mêmes clés de base
+    // Les deux doivent partager les mÃªmes clÃ©s de base
     const sharedKeys: Array<keyof typeof controlled> = [
       "id",
       "name",
@@ -83,15 +84,15 @@ describe("knowledgeIsolation", () => {
       expect(npc).toHaveProperty(key);
     }
 
-    // Le personnage contrôlé a des stats, le PNJ n'est pas obligé d'en avoir
+    // Le personnage contrÃ´lÃ© a des stats, le PNJ n'est pas obligÃ© d'en avoir
     expect(typeof controlled.hunger).toBe("number");
     expect(typeof controlled.fatigue).toBe("number");
     expect(typeof controlled.health).toBe("number");
   });
 
-  it("seules les entités du lieu courant sont visibles", () => {
+  it("seules les entitÃ©s du lieu courant sont visibles", () => {
     const state = createInitialWorldState("Yara");
-    // Yara est place_centrale — Hamid est forge_hamid
+    // Yara est place_centrale â€” Hamid est forge_hamid
     const facts = factsFrom(
       buildPerceptibleFacts(state, state.controlledEntityId, dummyOutcome),
     );
@@ -101,3 +102,4 @@ describe("knowledgeIsolation", () => {
     expect(entityNames).not.toContain("Tariq");
   });
 });
+
