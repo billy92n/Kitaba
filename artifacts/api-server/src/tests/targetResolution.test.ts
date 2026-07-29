@@ -144,4 +144,3 @@ describe("rÃ©solution discriminÃ©e et stable", () => {
     },
   );
 });
-
