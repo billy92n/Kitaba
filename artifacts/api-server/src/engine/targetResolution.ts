@@ -8,6 +8,11 @@ import type {
   WorldState,
 } from "../domain/world.js";
 
+export type TargetResolution<T> =
+  | { status: "FOUND"; target: T }
+  | { status: "MISSING" }
+  | { status: "AMBIGUOUS"; candidateIds: string[] };
+
 export type ObjectAvailability =
   "ACTOR_INVENTORY" | "GROUND" | "OTHER_INVENTORY";
 
@@ -26,7 +31,7 @@ export function normalizeTarget(value: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
+    .replace(/[â€™']/g, " ")
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -51,32 +56,35 @@ function matchRank(id: string, name: string, query: string): number | null {
 function bestMatch<T extends { id: string; name: string }>(
   candidates: readonly T[],
   query: string,
-): T | null {
-  let selected: T | null = null;
-  let selectedRank = Number.POSITIVE_INFINITY;
-  for (const candidate of candidates) {
+): TargetResolution<T> {
+  const ranked = candidates.flatMap((candidate) => {
     const rank = matchRank(candidate.id, candidate.name, query);
-    if (rank !== null && rank < selectedRank) {
-      selected = candidate;
-      selectedRank = rank;
-    }
-  }
-  return selected;
+    return rank === null ? [] : [{ candidate, rank }];
+  });
+  if (ranked.length === 0) return { status: "MISSING" };
+  const bestRank = Math.min(...ranked.map(({ rank }) => rank));
+  const best = ranked
+    .filter(({ rank }) => rank === bestRank)
+    .map(({ candidate }) => candidate)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return best.length === 1
+    ? { status: "FOUND", target: best[0] }
+    : { status: "AMBIGUOUS", candidateIds: best.map(({ id }) => id) };
 }
 
 export function findLocationByQuery(
   state: WorldState,
   query: string | null,
-): WorldLocation | null {
-  if (query === null) return null;
+): TargetResolution<WorldLocation> {
+  if (query === null) return { status: "MISSING" };
   const stripped = query.replace(
-    /^(la|le|les|l['’]|du|de la|de l['’]|au|aux|un|une)\s*/i,
+    /^(la|le|les|l['â€™]|du|de la|de l['â€™]|au|aux|un|une)\s*/i,
     "",
   );
   const normalized = normalizedQuery(stripped.length > 0 ? stripped : query);
   return normalized
     ? bestMatch(Object.values(state.locations), normalized)
-    : null;
+    : { status: "MISSING" };
 }
 
 export function findEntityAtLocation(
@@ -84,104 +92,144 @@ export function findEntityAtLocation(
   actorId: EntityId,
   locationId: LocationId,
   query: string | null,
-): Entity | null {
+): TargetResolution<Entity> {
   const normalized = normalizedQuery(query);
-  if (!normalized) return null;
-  return bestMatch(
-    Object.values(state.entities).filter(
-      (entity) => entity.locationId === locationId && entity.id !== actorId,
-    ),
-    normalized,
-  );
+  return normalized
+    ? bestMatch(
+        Object.values(state.entities).filter(
+          (entity) => entity.locationId === locationId && entity.id !== actorId,
+        ),
+        normalized,
+      )
+    : { status: "MISSING" };
+}
+
+function resolveObjectGroup(
+  objects: WorldObject[],
+  availability: ObjectAvailability,
+  query: string,
+): TargetResolution<ResolvedObject> {
+  const result = bestMatch(objects, query);
+  if (result.status !== "FOUND") return result;
+  return {
+    status: "FOUND",
+    target: { object: result.target, availability },
+  };
 }
 
 /**
- * Priorité stable conservant le comportement historique :
- * inventaire de l'acteur, objets au sol, puis objets portés par une autre
- * entité présente. Cette dernière catégorie reste une décision métier ouverte.
+ * PrioritÃ© mÃ©tier historique : inventaire de l'acteur, sol, inventaire tiers.
+ * Une ambiguÃ¯tÃ© au meilleur niveau de prioritÃ© est refusÃ©e.
  */
 export function resolveObjectInActorContext(
   state: WorldState,
   actorId: EntityId,
   query: string | null,
-): ResolvedObject | null {
+): TargetResolution<ResolvedObject> {
   const actor = state.entities[actorId];
   const normalized = normalizedQuery(query);
-  if (!actor || !normalized) return null;
+  if (!actor || !normalized) return { status: "MISSING" };
 
-  const inventoryObject = bestMatch(
-    actor.inventory.flatMap((id) => {
-      const object = state.objects[id];
-      return object ? [object] : [];
-    }),
-    normalized,
-  );
-  if (inventoryObject)
-    return { object: inventoryObject, availability: "ACTOR_INVENTORY" };
+  const groups: Array<[WorldObject[], ObjectAvailability]> = [
+    [
+      actor.inventory.flatMap((id) => {
+        const object = state.objects[id];
+        return object ? [object] : [];
+      }),
+      "ACTOR_INVENTORY",
+    ],
+    [
+      Object.values(state.objects).filter(
+        (object) =>
+          object.locationId === actor.locationId && object.ownerId === null,
+      ),
+      "GROUND",
+    ],
+    [
+      Object.values(state.objects).filter(
+        (object) =>
+          object.ownerId !== null &&
+          object.ownerId !== actorId &&
+          state.entities[object.ownerId]?.locationId === actor.locationId,
+      ),
+      "OTHER_INVENTORY",
+    ],
+  ];
 
-  const groundObject = bestMatch(
-    Object.values(state.objects).filter(
-      (object) =>
-        object.locationId === actor.locationId && object.ownerId === null,
-    ),
-    normalized,
-  );
-  if (groundObject) return { object: groundObject, availability: "GROUND" };
+  for (const [objects, availability] of groups) {
+    const result = resolveObjectGroup(objects, availability, normalized);
+    if (result.status !== "MISSING") return result;
+  }
+  return { status: "MISSING" };
+}
 
-  const otherInventoryObject = bestMatch(
-    Object.values(state.objects).filter(
-      (object) =>
-        object.ownerId !== null &&
-        object.ownerId !== actorId &&
-        state.entities[object.ownerId]?.locationId === actor.locationId,
-    ),
-    normalized,
-  );
-  return otherInventoryObject
-    ? { object: otherInventoryObject, availability: "OTHER_INVENTORY" }
-    : null;
+function inspectableResult<
+  T extends { id: string; name: string; description: string },
+>(
+  result: TargetResolution<T>,
+  kind: ResolvedInspectable["kind"],
+): TargetResolution<ResolvedInspectable> {
+  if (result.status !== "FOUND") return result;
+  return {
+    status: "FOUND",
+    target: {
+      kind,
+      id: result.target.id,
+      name: result.target.name,
+      description: result.target.description,
+    },
+  };
 }
 
 export function findInspectable(
   state: WorldState,
   observerId: EntityId,
   query: string | null,
-): ResolvedInspectable | null {
+): TargetResolution<ResolvedInspectable> {
   const observer = state.entities[observerId];
   const normalized = normalizedQuery(query);
-  if (!observer || !normalized) return null;
+  if (!observer || !normalized) return { status: "MISSING" };
 
-  const object = bestMatch(
-    Object.values(state.objects).filter(
-      (candidate) =>
-        candidate.locationId === observer.locationId ||
-        observer.inventory.includes(candidate.id),
+  const object = inspectableResult(
+    bestMatch(
+      Object.values(state.objects).filter(
+        (candidate) =>
+          candidate.locationId === observer.locationId ||
+          observer.inventory.includes(candidate.id),
+      ),
+      normalized,
     ),
-    normalized,
+    "OBJECT",
   );
-  if (object) return { kind: "OBJECT", ...object };
+  if (object.status !== "MISSING") return object;
 
-  const entity = bestMatch(
-    Object.values(state.entities).filter(
-      (candidate) =>
-        candidate.id !== observerId &&
-        candidate.locationId === observer.locationId,
+  const entity = inspectableResult(
+    bestMatch(
+      Object.values(state.entities).filter(
+        (candidate) =>
+          candidate.id !== observerId &&
+          candidate.locationId === observer.locationId,
+      ),
+      normalized,
     ),
-    normalized,
+    "ENTITY",
   );
-  if (entity) return { kind: "ENTITY", ...entity };
+  if (entity.status !== "MISSING") return entity;
 
   const location = state.locations[observer.locationId];
-  if (!location) return null;
-  const locationMatch = bestMatch(
-    [
-      location,
-      ...location.connectedLocations.flatMap((id) => {
-        const connected = state.locations[id];
-        return connected ? [connected] : [];
-      }),
-    ],
-    normalized,
+  if (!location) return { status: "MISSING" };
+  return inspectableResult(
+    bestMatch(
+      [
+        location,
+        ...location.connectedLocations.flatMap((id) => {
+          const connected = state.locations[id];
+          return connected ? [connected] : [];
+        }),
+      ],
+      normalized,
+    ),
+    "LOCATION",
   );
-  return locationMatch ? { kind: "LOCATION", ...locationMatch } : null;
 }
+
